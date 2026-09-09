@@ -28,7 +28,7 @@
  * setup completes.
  */
 
-const { ethers } = require("ethers");
+const { ethers, ensNormalize, namehash } = require("ethers");
 require("dotenv").config();
 
 // --- Real ETHOnline 2026 hackathon ENSv2 deployment addresses (Sepolia) ---
@@ -165,17 +165,12 @@ async function deployAgentRegistry(rootLabel, ownerAddress) {
   // namehash("<rootLabel>.eth") — computed manually since we don't have a
   // full ENS namehash util wired in; for a single-label .eth name this is:
   //   namehash = keccak256(keccak256(0x00...00, keccak256("eth")), keccak256(rootLabel))
-  const ETH_NODE = ethers.keccak256(
-    ethers.concat([ethers.ZeroHash, ethers.keccak256(ethers.toUtf8Bytes("eth"))])
-  );
-  console.log(`ETH_NODE (namehash of "eth"): ${ETH_NODE}`);
-  console.log(`name concatenation: ${ethers.concat([ETH_NODE, ethers.keccak256(ethers.toUtf8Bytes(rootLabel))])}`);
-  const rootNamehash = ethers.keccak256(
-    ethers.concat([ETH_NODE, ethers.keccak256(ethers.toUtf8Bytes(rootLabel))])
-  );
+  const normalizedRootLabel = ensNormalize(rootLabel);
+  console.log(`Normalized root label: ${normalizedRootLabel}`);
+  const rootNamehash = namehash(normalizedRootLabel + ".eth");
   console.log(`Root namehash: ${rootNamehash}`);
 
-  const version = 0n;
+  const version = 1n;
   const salt = BigInt(
     ethers.keccak256(
       ethers.AbiCoder.defaultAbiCoder().encode(
