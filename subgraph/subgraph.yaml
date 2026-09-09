@@ -1,0 +1,41 @@
+specVersion: 1.0.0
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: CreditBureau
+    network: sepolia
+    source:
+      # deployed address from contracts/scripts/deploy.js
+      address: "0x3edf1A1229ffdD1c7DB7D30ee6325AA06c790118"
+      abi: CreditBureau
+      # actual deployment block to keep indexing fast
+      startBlock: 11655484
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Agent
+        - Outcome
+        - ScoreSnapshot
+        - SpendLimitChange
+      abis:
+        - name: CreditBureau
+          file: ../contracts/artifacts/contracts/CreditBureau.sol/CreditBureau.json
+      eventHandlers:
+        - event: AgentRegistered(indexed address,string,bool,uint256)
+          handler: handleAgentRegistered
+        - event: HumanBackingUpdated(indexed address,bool,uint256)
+          handler: handleHumanBackingUpdated
+        - event: OutcomeRecorded(indexed address,uint8,uint256,indexed bytes32,uint256)
+          handler: handleOutcomeRecorded
+        - event: ScoreUpdated(indexed address,uint32,uint32,uint256)
+          handler: handleScoreUpdated
+        - event: SpendLimitUpdated(indexed address,uint256,uint256,uint256)
+          handler: handleSpendLimitUpdated
+        - event: AgentFrozen(indexed address,uint256)
+          handler: handleAgentFrozen
+        - event: AgentUnfrozen(indexed address,uint256)
+          handler: handleAgentUnfrozen
+      file: ./src/mapping.ts

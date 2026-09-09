@@ -1,0 +1,68 @@
+"""
+An AI agent tracked by the credit bureau. Queryable as:
+  { agent(id: "trader.acme.eth") { score spendLimitWei frozen } }
+"""
+type Agent @entity(immutable: false) {
+  id: ID! # controller address, lowercase hex
+  ensName: String!
+  humanBacked: Boolean!
+  registered: Boolean!
+  frozen: Boolean!
+  score: Int!
+  spendLimitWei: BigInt!
+  totalTx: Int!
+  successTx: Int!
+  lateTx: Int!
+  disputedTx: Int!
+  defaultTx: Int!
+  registeredAt: BigInt!
+  updatedAt: BigInt!
+  outcomes: [Outcome!]! @derivedFrom(field: "agent")
+  scoreHistory: [ScoreSnapshot!]! @derivedFrom(field: "agent")
+  spendLimitChanges: [SpendLimitChange!]! @derivedFrom(field: "agent")
+}
+
+"""
+A single settlement event: a payment, a job completion, a dispute, or a
+default. This is the raw "credit history report" data — every row a lender
+or marketplace would want to see before trusting the agent.
+"""
+type Outcome @entity(immutable: true) {
+  id: ID! # tx hash - log index
+  agent: Agent!
+  outcomeType: OutcomeType!
+  amountWei: BigInt!
+  jobId: Bytes!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+}
+
+enum OutcomeType {
+  Success
+  Late
+  Disputed
+  Default
+}
+
+"""
+Point-in-time score snapshot, so a UI can chart "score over time" the way a
+FICO history chart works.
+"""
+type ScoreSnapshot @entity(immutable: true) {
+  id: ID! # tx hash - log index
+  agent: Agent!
+  oldScore: Int!
+  newScore: Int!
+  timestamp: BigInt!
+}
+
+"""
+Point-in-time spend-limit change, so a UI can show "limit unlocked" moments.
+"""
+type SpendLimitChange @entity(immutable: true) {
+  id: ID!
+  agent: Agent!
+  oldLimitWei: BigInt!
+  newLimitWei: BigInt!
+  timestamp: BigInt!
+}
