@@ -13,7 +13,7 @@
  *      (e.g. "agent-1a2b3c4d.agentcreditbureau.eth") via the project's
  *      AgentSubnameRegistrar
  *   3. grant CreditBureau the EAC role scoped to exactly the spend-limit
- *      text key on that resolver (authorizeTextRoles)
+ *      text key on that resolver (grantSetterRoles)
  *   4. register with the bureau — which verifies subname ownership on-chain
  *      and then writes every spend-limit update into the agent's own ENS
  *      text records through that scoped role
@@ -37,8 +37,16 @@ const VERIFIABLE_FACTORY_ABI = [
   "function deployProxy(address implementation, uint256 salt, bytes data) external returns (address proxy)",
   "event ProxyDeployed(address indexed sender, address indexed proxyAddress, uint256 salt, address implementation)",
 ];
-const RESOLVER_INIT_ABI = ["function initialize(address admin, uint256 roleBitmap, bytes[] setters)"];
-const RESOLVER_ABI = ["function authorizeTextRoles(bytes toName, string key, address account, bool grant) external"];
+const RESOLVER_INIT_ABI = ["function initialize((address account, uint256 roleBitmap)[] grants, bytes[] calls)"];
+// Latest ENSv2 Permissioned Resolver: no authorizeTextRoles(). Argument-
+// scoped roles are granted via grantSetterRoles(setter, account), where
+// setter is ABI-encoded calldata whose selector+argument define the role.
+// Setters take the DNS-encoded name (bytes), not a bytes32 node.
+const RESOLVER_ABI = [
+  "function grantSetterRoles(bytes setter, address account) external",
+  // Included only to ABI-encode setter calldata for grantSetterRoles().
+  "function setText(bytes name, string key, string value) external",
+];
 const REGISTRAR_ABI = [
   "function register(string label, address controller, address resolver, bool humanBacked, uint64 duration) external returns (uint256 tokenId)",
 ];
@@ -57,7 +65,8 @@ function randomJobId(i) {
   return ethers.id(`job-${Date.now()}-${i}`);
 }
 
-/** DNS-encode a name (viem's packetToBytes equivalent) for authorizeTextRoles. */
+/** DNS-encode a name (viem's packetToBytes equivalent) — needed to build
+ * the setter calldata passed to grantSetterRoles(). */
 function dnsEncode(name) {
   const labels = name.split(".");
   const parts = labels.map((label) => {
@@ -79,8 +88,7 @@ async function deployAgentResolver(factory, controllerAddress) {
     )
   );
   const initData = new ethers.Interface(RESOLVER_INIT_ABI).encodeFunctionData("initialize", [
-    controllerAddress,
-    BigInt("0x" + "1".repeat(64)),
+    [{ account: controllerAddress, roleBitmap: BigInt("0x" + "1".repeat(64)) }],
     [],
   ]);
   const tx = await factory.deployProxy(ENS_RESOLVER_IMPL, salt, initData);
@@ -110,12 +118,15 @@ async function mintEnsIdentity(registrar, resolver, agentWallet, label) {
 
 async function grantSpendLimitRole(resolverProxy, fullName, bureauAddress, agentWallet) {
   const agentResolver = resolverProxy.connect(agentWallet);
-  const tx = await agentResolver.authorizeTextRoles(
+  // grantSetterRoles() derives the role + EAC resource from the setter
+  // calldata selector and argument (the text key). The name/value parts are
+  // ignored — we still pass the agent's DNS-encoded name for clarity.
+  const setterCalldata = agentResolver.interface.encodeFunctionData("setText", [
     dnsEncode(fullName),
     SPEND_LIMIT_TEXT_KEY,
-    bureauAddress,
-    true
-  );
+    "",
+  ]);
+  const tx = await agentResolver.grantSetterRoles(setterCalldata, bureauAddress);
   const receipt = await tx.wait();
   return receipt.hash;
 }
@@ -144,28 +155,28 @@ async function main() {
 
   // Fund the demo agent wallet with a little gas from the deployer so it
   // can pay for its own resolver deployment, registration, and EAC grants.
-  await wallet.sendTransaction({ to: agentWallet.address, value: ethers.parseEther("0.05") });
+  // await wallet.sendTransaction({ to: agentWallet.address, value: ethers.parseEther("0.05") });
 
   const label = process.env.SIM_AGENT_LABEL || `agent-${agentWallet.address.slice(2, 10).toLowerCase()}`;
   const fullName = `${label}.${ENS_ROOT_NAME}`;
-  console.log(`Minting ENSv2 identity ${fullName}...`);
+  console.log(`Full ENSv2 identity ${fullName}...`);
 
-  const resolver = await deployAgentResolver(factory, agentWallet.address);
-  console.log("Permissioned Resolver:", resolver);
+  // const resolver = await deployAgentResolver(factory, agentWallet.address);
+  // console.log("Permissioned Resolver:", resolver);
 
-  const registrar = new ethers.Contract(registrarAddress, REGISTRAR_ABI, wallet);
-  await mintEnsIdentity(registrar, resolver, agentWallet, label);
-  console.log("Subname registered under", ENS_ROOT_NAME);
+  // const registrar = new ethers.Contract(registrarAddress, REGISTRAR_ABI, wallet);
+  // await mintEnsIdentity(registrar, resolver, agentWallet, label);
+  // console.log("Subname registered under", ENS_ROOT_NAME);
 
-  const resolverProxy = new ethers.Contract(resolver, RESOLVER_ABI, wallet);
-  await grantSpendLimitRole(resolverProxy, fullName, bureauAddress, agentWallet);
-  console.log("Scoped EAC role granted to CreditBureau for", SPEND_LIMIT_TEXT_KEY);
+  // const resolverProxy = new ethers.Contract(resolver, RESOLVER_ABI, wallet);
+  // await grantSpendLimitRole(resolverProxy, fullName, bureauAddress, agentWallet);
+  // console.log("Scoped EAC role granted to CreditBureau for", SPEND_LIMIT_TEXT_KEY);
 
-  console.log("Registering agent with CreditBureau (on-chain subname check)...");
-  const bureauAsAgent = bureau.connect(agentWallet);
-  const regTx = await bureauAsAgent.registerAgent(fullName, true);
-  await regTx.wait();
-  console.log("Agent registered. tx:", regTx.hash);
+  // console.log("Registering agent with CreditBureau (on-chain subname check)...");
+  // const bureauAsAgent = bureau.connect(agentWallet);
+  // const regTx = await bureauAsAgent.registerAgent(fullName, true);
+  // await regTx.wait();
+  // console.log("Agent registered. tx:", regTx.hash);
 
   console.log(`Running scenario "${scenario}" for ${count} transactions...`);
   for (let i = 0; i < count; i++) {

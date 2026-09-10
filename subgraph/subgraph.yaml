@@ -7,10 +7,10 @@ dataSources:
     network: sepolia
     source:
       # deployed address from contracts/scripts/deploy.js
-      address: "0x39dB21D815b5d558301DaAFd8a91aE9863878ba7"
+      address: "0xc7b70Ad30e0eDEB369022C0Cb0AC611f2754f3eb"
       abi: CreditBureau
       # actual deployment block to keep indexing fast
-      startBlock: 11672839
+      startBlock: 11675965
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9

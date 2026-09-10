@@ -42,7 +42,7 @@ docs/               Demo script and architecture notes
 #    deploy: CreditBureau pins the project's ENSv2 UserRegistry at
 #    construction, and every agent registration is verified against it.
 
-# first set ENSV2_PAYMENT_TOKEN in ../.env (an ERC20 the hackathon registrar accepts)
+# first set ENSV2_PAYMENT_TOKEN in .env (an ERC20 the hackathon registrar accepts)
 node integrations/ens/setup-agent-namespace.js agentcreditbureau
 #    -> registers agentcreditbureau.eth, deploys your UserRegistry proxy,
 #       attaches it (setSubregistry), deploys AgentSubnameRegistrar and grants
@@ -82,7 +82,7 @@ node integrations/graph/credit-analyst.js 0x<real-controller-address>
 node ../integrations/ens/register-single-agent.js trader 0x<agent-controller>
 #    (optionally pass registrar + bureau + root explicitly as positional args)
 #    If the controller isn't the deployer, set CONTROLLER_PRIVATE_KEY in .env —
-#    authorizeTextRoles() must be sent by the controller wallet.
+#    grantSetterRoles() must be sent by the controller wallet.
 
 # 4b. Then the CONTROLLER registers with the bureau (verified on-chain through
 #     the ENS registry; the frontend does this inline with one click) and the
@@ -159,7 +159,7 @@ Use this exact sequence for a sponsor-grade demo and to capture real evidence be
 
 6. Verify a real human-backed agent with World AgentKit/AgentBook and push the proof on-chain.
    ```bash
-   node ../integrations/world/verify-agent.js 0x2bdD28B49185589fC47499b5A1b35eDb4C305D3F
+   node integrations/world/verify-agent.js 0x2bdD28B49185589fC47499b5A1b35eDb4C305D3F
    ```
 
 7. Run the Graph analyst using the live endpoint and capture the output.
@@ -205,7 +205,7 @@ secrets. The external flows require additional deployment-specific values:
   AgentBook status and fails closed when the wallet is not registered.
 - `AGENT_PRIVATE_KEY`: the simulator's throwaway demo-agent wallet.
 - `CONTROLLER_PRIVATE_KEY`: needed by `register-single-agent.js` to run
-  `authorizeTextRoles()` as the agent controller when it is not the deployer.
+  `grantSetterRoles()` as the agent controller when it is not the deployer.
 - `VITE_ESCROW_ADDRESS` + `VITE_ENS_AGENT_SUBNAME_REGISTRAR_ADDRESS`:
   needed by the frontend for credit-limited settlement and in-browser ENSv2
   registration.
@@ -234,7 +234,7 @@ a reporter during deployment. The ENSv2 limb is real end-to-end on Sepolia:
 the bureau verifies each agent's subname on-chain (`getOwner` on the project
 UserRegistry), captures the agent's own Permissioned Resolver, and only ever
 writes to the single `com.agentcreditbureau.spend-limit-wei` text record it was
-granted via `authorizeTextRoles()` — the agent can revoke that at any time
+granted via `grantSetterRoles()` — the agent can revoke that at any time
 The Graph analyst uses indexed outcomes and returns deterministic evidence
 even when no model API key is configured.
 
@@ -248,10 +248,21 @@ cd ../frontend && npm run build          # Vite production build
 cd ../subgraph && graph codegen && graph build
 cd ../integrations/hedera && npm run check
 cd ../integrations/mcp && npm run smoke  # end-to-end MCP round trip (mock subgraph)
+node integrations/mcp/cli.js tools       # list the MCP tools, runnable from scripts
 ```
 
 Live ENSv2 registration, World AgentBook verification, Graph queries, and ATS
 issuance require valid network credentials and deployment addresses.
+
+### Frontend capabilities (frontend/src/App.jsx)
+
+The dashboard runs the full stack with env-driven addresses (frontend/.env): a
+live config strip, identity minting (ENSv2 resolver + subname + EAC scope),
+credit-limited escrow settlement, the on-chain + subgraph credit report with
+score/limit history, the Graph credit analyst's evidence-backed decision
+(approve / monitor / decline, optional AI narrative), live runs of all three
+MCP tools (list_agents, get_agent_report, get_factoring_rate) with the exact
+payload an AI agent receives, and a capability index across the whole stack.
 
 ## ENSv2 hackathon deployment
 

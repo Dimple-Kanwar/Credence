@@ -15,12 +15,14 @@ interface IEnsProjectRegistry {
 
 /// @notice ENSv2 Permissioned Resolver. CreditBureau is granted
 ///         `ROLE_SET_TEXT` scoped to exactly `SPEND_LIMIT_TEXT_KEY` via the
-///         resolver's `authorizeTextRoles()` (see
+///         resolver's `grantSetterRoles()` (see
 ///         integrations/ens/register-single-agent.js), so writing the spend
 ///         limit through this interface is the ONLY record the bureau is
 ///         permissioned to touch on an agent's own resolver.
+/// @dev Latest ENSv2 resolver setters take the DNS-encoded name as `bytes`
+///      (not a bytes32 namehash); the node is derived from the name on-chain.
 interface IEnsPermissionedResolver {
-    function setText(bytes32 node, string calldata key, string calldata value) external;
+    function setText(bytes calldata name, string calldata key, string calldata value) external;
 }
 
 /// @title CreditBureau
@@ -341,16 +343,18 @@ contract CreditBureau {
     /// @dev Writes the agent's current spend limit into its own Permissioned
     ///      Resolver text record under `SPEND_LIMIT_TEXT_KEY`. The bureau can
     ///      only do this because the agent granted it ROLE_SET_TEXT scoped to
-    ///      exactly that key via `authorizeTextRoles()` — if the grant is
+    ///      exactly that key via `grantSetterRoles()` — if the grant is
     ///      revoked, this silently fails-soft (the limit lives on-chain in
     ///      CreditBureau either way; the text record is the resolvable
-    ///      mirror that any app, wallet, or agent can read).
+    ///      mirror that any app, wallet, or agent can read). Setters on the
+    ///      ENSv2 resolver are name-based, so the node is derived from the
+    ///      DNS-encoded name we pass here.
     function _persistSpendLimit(address controller) internal {
         address resolver = resolverOf[controller];
         if (resolver == address(0)) return;
         uint256 limitWei = agents[controller].spendLimitWei;
         IEnsPermissionedResolver(resolver).setText(
-            nodeOf[controller], SPEND_LIMIT_TEXT_KEY, _uintToString(limitWei)
+            _dnsEncode(agents[controller].ensName), SPEND_LIMIT_TEXT_KEY, _uintToString(limitWei)
         );
         emit SpendLimitPersistedToEns(controller, resolver, limitWei, block.timestamp);
     }
@@ -402,6 +406,32 @@ contract CreditBureau {
             }
         }
         revert("CreditBureau: ENS name must include a parent domain");
+    }
+
+    /// @dev DNS-encode a name (RFC 1035): each label prefixed with its length
+    ///      as a single byte, terminated by a 0x00 root label. Labels are ASCII
+    ///      and <= 63 chars (validated by the frontend), so one length byte is
+    ///      always enough. This is the form the ENSv2 Permissioned Resolver's
+    ///      setters expect (`setText(bytes name, ...)`).
+    function _dnsEncode(string memory name) internal pure returns (bytes memory out) {
+        bytes memory b = bytes(name);
+        out = new bytes(b.length + 2); // upper bound: length byte per char + terminator
+        uint256 outLen = 0;
+        uint256 start = 0;
+        for (uint256 i = 0; i <= b.length; i++) {
+            if (i == b.length || b[i] == 0x2e) {
+                require(i > start, "CreditBureau: invalid ENS name"); // no empty labels
+                out[outLen++] = bytes1(uint8(i - start)); // label length byte
+                for (uint256 j = start; j < i; j++) {
+                    out[outLen++] = b[j];
+                }
+                start = i + 1;
+            }
+        }
+        out[outLen++] = 0x00; // root label terminator
+        assembly {
+            mstore(out, outLen) // shrink to actual size
+        }
     }
 
     function _substring(bytes memory b, uint256 start, uint256 lengthValue)
