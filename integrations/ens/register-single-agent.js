@@ -9,7 +9,7 @@
  *      resolver instance — docs.ens.domains/ensv2/permissioned-resolver).
  *   2. Call our AgentSubnameRegistrar.register() to mint the agent's name
  *      (e.g. "trader.agentcreditbureau.eth") pointed at that resolver.
- *   3. Use the resolver's authorizeTextRoles() to grant the CreditBureau
+ *   3. Use the resolver's grantSetterRoles() to grant the CreditBureau
  *      contract ROLE_SET_TEXT scoped to ONLY the "spend-limit-wei" key —
  *      this is the actual enforcement mechanism: CreditBureau can update
  *      this agent's spend-limit record, and nothing else, on this
@@ -34,18 +34,36 @@ const VERIFIABLE_FACTORY_ABI = [
   "event ProxyDeployed(address indexed sender, address indexed proxyAddress, uint256 salt, address implementation)",
 ];
 
-const RESOLVER_INIT_ABI = ["function initialize(address admin, uint256 roleBitmap, bytes[] setters)"];
+const RESOLVER_INIT_ABI = ["function initialize((address account, uint256 roleBitmap)[] grants, bytes[] calls)"];
 
+// Latest ENSv2 Permissioned Resolver ABI (docs at
+// docs.ens.domains/ensv2/permissioned-resolver). Two breaking changes vs the
+// namechain-127 ABI the older code used:
+//
+//   1. There is NO authorizeTextRoles(). Argument-scoped roles are granted
+//      with grantSetterRoles(setter, account), where `setter` is ABI-encoded
+//      calldata of the setter to authorize. Only the function selector and
+//      the argument matter — the name and value parts are ignored — and the
+//      resolver derives the matching role (ROLE_SET_TEXT for setText) itself.
+//      The caller must hold the corresponding admin role
+//      (ROLE_SET_TEXT_ADMIN = ROLE_SET_TEXT << 128).
+//
+//   2. Setters are name-based: they take the DNS-encoded name as `bytes`,
+//      not a bytes32 namehash (e.g. setText(bytes name, string key,
+//      string value)). There are no standalone record getters; records are
+//      read through resolve(name, profileCalldata).
 const RESOLVER_ABI = [
-  "function initialize(address admin, uint256 roleBitmap, bytes[] setters)",
-  "function authorizeTextRoles(bytes toName, string key, address account, bool grant) external returns (bool)",
-  "function setText(bytes32 node, string key, string value) external",
-  "function text(bytes32 node, string key) external view returns (string)",
+  "function initialize((address account, uint256 roleBitmap)[] grants, bytes[] calls)",
+  "function grantSetterRoles(bytes setter, address account) external",
+  // Included only to ABI-encode setter calldata for grantSetterRoles().
+  "function setText(bytes name, string key, string value) external",
 ];
 
-const REGISTRAR_ABI = [
+const AGENT_SUBNAME_REGISTRAR_ABI = [
   "function register(string label, address controller, address resolver, bool humanBacked, uint64 duration) external returns (uint256 tokenId)",
+  "function isAvailable(string label) public view returns (bool)"
 ];
+
 
 const ALL_ROLES = BigInt("0x" + "1".repeat(64));
 
@@ -55,11 +73,13 @@ function getSigner() {
 }
 
 /**
- * The Permissioned Resolver's initialize() grants ALL_ROLES to `admin` =
- * the CONTROLLER. authorizeTextRoles() therefore must be sent by the
- * controller's wallet, not the deployer's. If CONTROLLER_PRIVATE_KEY is set
- * we use it (the general case); otherwise we fall back to the deployer key,
- * which only works when the deployer IS the controller.
+ * The Permissioned Resolver's initialize() grants the grants array's
+ * roleBitmaps on ROOT_RESOURCE exactly as passed — here ALL_ROLES to the
+ * CONTROLLER. grantSetterRoles() therefore must be sent by the controller's
+ * wallet (it holds ROLE_SET_TEXT_ADMIN), not the deployer's. If
+ * CONTROLLER_PRIVATE_KEY is set we use it (the general case); otherwise we
+ * fall back to the deployer key, which only works when the deployer IS the
+ * controller.
  */
 function getControllerSigner(controllerAddress) {
   const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
@@ -70,15 +90,16 @@ function getControllerSigner(controllerAddress) {
   if (deployer.address.toLowerCase() !== controllerAddress.toLowerCase()) {
     console.warn(
       "WARNING: CONTROLLER_PRIVATE_KEY is not set and the deployer != controller. " +
-        "authorizeTextRoles() will be rejected by the real Permissioned Resolver " +
-        "(the controller holds the roles, not the deployer). Use the frontend " +
-        "or set CONTROLLER_PRIVATE_KEY."
+        "grantSetterRoles() will be rejected by the real Permissioned Resolver " +
+        "(the controller holds the roles + admin roles, not the deployer). Use " +
+        "the frontend or set CONTROLLER_PRIVATE_KEY."
     );
   }
   return deployer;
 }
 
-/** DNS-encode a name (viem's packetToBytes equivalent) — needed for authorizeTextRoles */
+/** DNS-encode a name (viem's packetToBytes equivalent) — needed to build
+ * the setter calldata passed to grantSetterRoles(). */
 function dnsEncode(name) {
   const labels = name.split(".");
   const parts = labels.map((label) => {
@@ -104,10 +125,10 @@ async function deployAgentResolver(controllerAddress) {
   );
 
   const initIface = new ethers.Interface(RESOLVER_INIT_ABI);
-  const initData = initIface.encodeFunctionData("initialize", [controllerAddress, ALL_ROLES, []]);
+  const resolverInitData = initIface.encodeFunctionData("initialize", [[{ account: controllerAddress, roleBitmap: ALL_ROLES }], []]);
 
   console.log(`Deploying resolver proxy for ${controllerAddress}...`);
-  const tx = await factory.deployProxy(PERMISSIONED_RESOLVER_IMPL_ADDRESS, salt, initData);
+  const tx = await factory.deployProxy(PERMISSIONED_RESOLVER_IMPL_ADDRESS, salt, resolverInitData);
   const receipt = await tx.wait();
 
   const iface = new ethers.Interface(VERIFIABLE_FACTORY_ABI);
@@ -129,8 +150,12 @@ async function deployAgentResolver(controllerAddress) {
 /** Step 2 */
 async function registerAgent(registrarAddress, label, controllerAddress, resolverAddress, humanBacked, durationSeconds) {
   const wallet = getSigner();
-  const registrar = new ethers.Contract(registrarAddress, REGISTRAR_ABI, wallet);
-  console.log(`Registering ${label}.<root>.eth for ${controllerAddress}...`);
+  const registrar = new ethers.Contract(registrarAddress, AGENT_SUBNAME_REGISTRAR_ABI, wallet);
+  const available = await registrar.isAvailable(label);
+  if (!available) {
+    throw new Error(`AgentSubnameRegistrar reports that ${label}.${ENS_ROOT_NAME} is not available.`);
+  }
+  console.log(`Registering ${label}.${ENS_ROOT_NAME} for ${controllerAddress}...`);
   const tx = await registrar.register(label, controllerAddress, resolverAddress, humanBacked, durationSeconds);
   const receipt = await tx.wait();
   console.log("Agent registered. tx:", receipt.hash);
@@ -139,15 +164,26 @@ async function registerAgent(registrarAddress, label, controllerAddress, resolve
 
 /** Step 3 — the actual enforcement wiring */
 async function grantCreditBureauSpendLimitRole(resolverAddress, fullAgentName, creditBureauAddress, controllerAddress) {
-  // authorizeTextRoles must be called by an account holding
-  // ROLE_SET_TEXT_ADMIN on this resolver — the CONTROLLER received ALL_ROLES
-  // from initialize(), so this must run as the controller wallet.
+  // grantSetterRoles must be called by an account holding the corresponding
+  // admin role — ROLE_SET_TEXT_ADMIN = ROLE_SET_TEXT << 128 — on this
+  // resolver. The CONTROLLER received ALL_ROLES from initialize(), so this
+  // must run as the controller wallet.
   const wallet = getControllerSigner(controllerAddress);
   const resolver = new ethers.Contract(resolverAddress, RESOLVER_ABI, wallet);
   const dnsName = dnsEncode(fullAgentName);
 
   console.log(`Granting CreditBureau ROLE_SET_TEXT scoped to "${SPEND_LIMIT_TEXT_KEY}" on ${fullAgentName}...`);
-  const tx = await resolver.authorizeTextRoles(dnsName, SPEND_LIMIT_TEXT_KEY, creditBureauAddress, true);
+  // The latest ENSv2 resolver has no authorizeTextRoles(). Argument-scoped
+  // roles are granted by passing ABI-encoded setter calldata to
+  // grantSetterRoles(): only the function selector and the argument (here
+  // the text key) are inspected — the name and value parts are ignored. We
+  // still build the calldata with the agent's DNS-encoded name for clarity.
+  const setterCalldata = resolver.interface.encodeFunctionData("setText", [
+    dnsName,
+    SPEND_LIMIT_TEXT_KEY,
+    "",
+  ]);
+  const tx = await resolver.grantSetterRoles(setterCalldata, creditBureauAddress);
   const receipt = await tx.wait();
   console.log("Scoped role granted. tx:", receipt.hash);
   console.log(
