@@ -28,7 +28,7 @@
  * setup completes.
  */
 
-const { ethers, ensNormalize, namehash } = require("ethers");
+const { ethers, ensNormalize, namehash,  } = require("ethers");
 require("dotenv").config();
 
 // --- Real ETHOnline 2026 hackathon ENSv2 deployment addresses (Sepolia) ---
@@ -42,7 +42,7 @@ const ROLE_REGISTRAR = 1n << 0n;
 const ROLE_RENEW = 1n << 16n;
 // Grants every role + every admin role on the registry to the deployer —
 // exact literal from the Verifiable Factory docs code example.
-const ALL_ROLES = 0x1111111111111111111111111111111111111111111111111111111111111111n;
+const ALL_ROLES = BigInt("0x" + "1".repeat(64));
 
 const ETH_REGISTRAR_ABI = [
   "function commit(bytes32 commitment) external",
@@ -70,7 +70,7 @@ const PAYMENT_TOKEN_ABI = [
   "function balanceOf(address account) external view returns (uint256)",
 ];
 
-const USER_REGISTRY_INIT_ABI = ["function initialize(address rootAccount, uint256 roleBitmap)"];
+const USER_REGISTRY_INIT_ABI = ["function initialize((address account, uint256 roleBitmap)[] grants)"];
 
 function getSigner() {
   const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
@@ -85,7 +85,7 @@ async function registerRootName(label, ownerAddress) {
 
   const isAvailable = await registrar.isAvailable(label);
   if (!isAvailable) {
-    console.log(`Root name ${label}.eth is not available for registration.`);
+    throw new Error(`Root name ${label}.eth is not available for registration.`);
   } else {
     console.log(`Root name ${label}.eth is available for registration.`);
 
@@ -170,7 +170,7 @@ async function deployAgentRegistry(rootLabel, ownerAddress) {
   const rootNamehash = namehash(normalizedRootLabel + ".eth");
   console.log(`Root namehash: ${rootNamehash}`);
 
-  const version = 1n;
+  const version = 0n;
   const salt = BigInt(
     ethers.keccak256(
       ethers.AbiCoder.defaultAbiCoder().encode(
@@ -181,17 +181,16 @@ async function deployAgentRegistry(rootLabel, ownerAddress) {
   );
   console.log(`Salt for UserRegistry deployment: ${salt}`);
 
-  const initIface = new ethers.Interface(USER_REGISTRY_INIT_ABI);
-  const initData = initIface.encodeFunctionData("initialize", [ownerAddress, ALL_ROLES]);
-
+  const registryInitData = new ethers.Interface(USER_REGISTRY_INIT_ABI).encodeFunctionData('initialize', [[{ account: ownerAddress, roleBitmap: ALL_ROLES }]]);
   console.log("Deploying agent subregistry via VerifiableFactory...");
-  console.log(`Implementation: ${USER_REGISTRY_IMPL_ADDRESS}, Salt: ${salt}, InitData: ${initData}`);
-  const tx = await factory.deployProxy(USER_REGISTRY_IMPL_ADDRESS, salt, initData);
+  console.log(`Implementation: ${USER_REGISTRY_IMPL_ADDRESS}, Salt: ${salt}, registryInitData: ${registryInitData}`);
+
+  const tx = await factory.deployProxy(USER_REGISTRY_IMPL_ADDRESS, salt, registryInitData);
   console.log("Deployment transaction sent. Waiting for confirmation...");
-  const receipt = await tx.wait();
+  const registryReceipt = await tx.wait();
 
   const iface = new ethers.Interface(VERIFIABLE_FACTORY_ABI);
-  const deployedLog = receipt.logs
+  const deployedLog = registryReceipt.logs
     .map((log) => {
       try {
         return iface.parseLog(log);
