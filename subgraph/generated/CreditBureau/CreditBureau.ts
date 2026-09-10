@@ -196,6 +196,36 @@ export class ScoreUpdated__Params {
   }
 }
 
+export class SpendLimitPersistedToEns extends ethereum.Event {
+  get params(): SpendLimitPersistedToEns__Params {
+    return new SpendLimitPersistedToEns__Params(this);
+  }
+}
+
+export class SpendLimitPersistedToEns__Params {
+  _event: SpendLimitPersistedToEns;
+
+  constructor(event: SpendLimitPersistedToEns) {
+    this._event = event;
+  }
+
+  get controller(): Address {
+    return this._event.parameters[0].value.toAddress();
+  }
+
+  get resolver(): Address {
+    return this._event.parameters[1].value.toAddress();
+  }
+
+  get limitWei(): BigInt {
+    return this._event.parameters[2].value.toBigInt();
+  }
+
+  get timestamp(): BigInt {
+    return this._event.parameters[3].value.toBigInt();
+  }
+}
+
 export class SpendLimitUpdated extends ethereum.Event {
   get params(): SpendLimitUpdated__Params {
     return new SpendLimitUpdated__Params(this);
@@ -389,6 +419,29 @@ export class CreditBureau extends ethereum.SmartContract {
     return new CreditBureau("CreditBureau", address);
   }
 
+  ENS_PROJECT_REGISTRY(): Address {
+    let result = super.call(
+      "ENS_PROJECT_REGISTRY",
+      "ENS_PROJECT_REGISTRY():(address)",
+      [],
+    );
+
+    return result[0].toAddress();
+  }
+
+  try_ENS_PROJECT_REGISTRY(): ethereum.CallResult<Address> {
+    let result = super.tryCall(
+      "ENS_PROJECT_REGISTRY",
+      "ENS_PROJECT_REGISTRY():(address)",
+      [],
+    );
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toAddress());
+  }
+
   MAX_LIMIT_WEI(): BigInt {
     let result = super.call("MAX_LIMIT_WEI", "MAX_LIMIT_WEI():(uint256)", []);
 
@@ -436,6 +489,29 @@ export class CreditBureau extends ethereum.SmartContract {
     }
     let value = result.value;
     return ethereum.CallResult.fromValue(value[0].toBigInt());
+  }
+
+  SPEND_LIMIT_TEXT_KEY(): string {
+    let result = super.call(
+      "SPEND_LIMIT_TEXT_KEY",
+      "SPEND_LIMIT_TEXT_KEY():(string)",
+      [],
+    );
+
+    return result[0].toString();
+  }
+
+  try_SPEND_LIMIT_TEXT_KEY(): ethereum.CallResult<string> {
+    let result = super.tryCall(
+      "SPEND_LIMIT_TEXT_KEY",
+      "SPEND_LIMIT_TEXT_KEY():(string)",
+      [],
+    );
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toString());
   }
 
   STARTING_LIMIT_WEI(): BigInt {
@@ -655,6 +731,25 @@ export class CreditBureau extends ethereum.SmartContract {
     return ethereum.CallResult.fromValue(value[0].toBoolean());
   }
 
+  nodeOf(param0: Address): Bytes {
+    let result = super.call("nodeOf", "nodeOf(address):(bytes32)", [
+      ethereum.Value.fromAddress(param0),
+    ]);
+
+    return result[0].toBytes();
+  }
+
+  try_nodeOf(param0: Address): ethereum.CallResult<Bytes> {
+    let result = super.tryCall("nodeOf", "nodeOf(address):(bytes32)", [
+      ethereum.Value.fromAddress(param0),
+    ]);
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toBytes());
+  }
+
   resolveByEnsName(ensName: string): Address {
     let result = super.call(
       "resolveByEnsName",
@@ -671,6 +766,25 @@ export class CreditBureau extends ethereum.SmartContract {
       "resolveByEnsName(string):(address)",
       [ethereum.Value.fromString(ensName)],
     );
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toAddress());
+  }
+
+  resolverOf(param0: Address): Address {
+    let result = super.call("resolverOf", "resolverOf(address):(address)", [
+      ethereum.Value.fromAddress(param0),
+    ]);
+
+    return result[0].toAddress();
+  }
+
+  try_resolverOf(param0: Address): ethereum.CallResult<Address> {
+    let result = super.tryCall("resolverOf", "resolverOf(address):(address)", [
+      ethereum.Value.fromAddress(param0),
+    ]);
     if (result.reverted) {
       return new ethereum.CallResult();
     }
@@ -694,6 +808,10 @@ export class ConstructorCall__Inputs {
 
   constructor(call: ConstructorCall) {
     this._call = call;
+  }
+
+  get ensProjectRegistry(): Address {
+    return this._call.inputValues[0].value.toAddress();
   }
 }
 

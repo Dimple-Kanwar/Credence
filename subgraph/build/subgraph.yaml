@@ -6,9 +6,9 @@ dataSources:
     name: CreditBureau
     network: sepolia
     source:
-      address: "0x3edf1A1229ffdD1c7DB7D30ee6325AA06c790118"
+      address: "0x39dB21D815b5d558301DaAFd8a91aE9863878ba7"
       abi: CreditBureau
-      startBlock: 11655484
+      startBlock: 11672839
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
