@@ -30,6 +30,7 @@ require("dotenv").config();
 const CREDIT_BUREAU_ABI = [
   "function registerAgent(string ensName, bool humanBacked) external",
   "function recordOutcome(address controller, uint8 outcome, uint256 amountWei, bytes32 jobId) external",
+  "function resolverOf(address controller) external view returns (address)",
   "function getProfile(address controller) external view returns (tuple(string ensName, address controller, bool humanBacked, bool registered, bool frozen, uint32 score, uint256 spendLimitWei, uint32 totalTx, uint32 successTx, uint32 lateTx, uint32 disputedTx, uint32 defaultTx))",
 ];
 
@@ -49,6 +50,7 @@ const RESOLVER_ABI = [
 ];
 const REGISTRAR_ABI = [
   "function register(string label, address controller, address resolver, bool humanBacked, uint64 duration) external returns (uint256 tokenId)",
+  "function labelOf(address controller) public view returns (string)",
 ];
 
 // Protocol-deployed ENSv2 Sepolia addresses (official hackathon deployment).
@@ -153,30 +155,105 @@ async function main() {
   const agentWallet = new ethers.Wallet(process.env.AGENT_PRIVATE_KEY, provider);
   console.log(`Demo agent controller: ${agentWallet.address}`);
 
-  // Fund the demo agent wallet with a little gas from the deployer so it
-  // can pay for its own resolver deployment, registration, and EAC grants.
-  // await wallet.sendTransaction({ to: agentWallet.address, value: ethers.parseEther("0.05") });
-
   const label = process.env.SIM_AGENT_LABEL || `agent-${agentWallet.address.slice(2, 10).toLowerCase()}`;
   const fullName = `${label}.${ENS_ROOT_NAME}`;
-  console.log(`Full ENSv2 identity ${fullName}...`);
+  const registrar = new ethers.Contract(registrarAddress, REGISTRAR_ABI, wallet);
 
-  // const resolver = await deployAgentResolver(factory, agentWallet.address);
-  // console.log("Permissioned Resolver:", resolver);
+  // ---------------------------------------------------------------------
+  // Identity: resolve-or-mint the agent's ENSv2 identity + bureau
+  // registration. Every step is idempotent so re-running a scenario on the
+  // same demo wallet does not re-mint (deterministic resolver salt, one
+  // subname per controller, one bureau registration per controller).
+  // ---------------------------------------------------------------------
+  let alreadyRegistered = false;
+  try {
+    alreadyRegistered = (await bureau.getProfile(agentWallet.address)).registered;
+  } catch (readErr) {
+    console.warn("Bureau profile read failed:", readErr.message);
+  }
 
-  // const registrar = new ethers.Contract(registrarAddress, REGISTRAR_ABI, wallet);
-  // await mintEnsIdentity(registrar, resolver, agentWallet, label);
-  // console.log("Subname registered under", ENS_ROOT_NAME);
+  if (alreadyRegistered) {
+    console.log("Agent already registered with CreditBureau — reusing its identity and history.");
+  } else {
+    // Fund the demo agent wallet with a little gas from the deployer so it
+    // can pay for its own resolver deployment, registration, and EAC grants.
+    try {
+      await wallet.sendTransaction({ to: agentWallet.address, value: ethers.parseEther("0.05") });
+      console.log("Funded the demo agent wallet from the deployer (0.05 ETH for gas).");
+    } catch (fundErr) {
+      console.warn("Funding skipped — the demo wallet must already hold gas:", fundErr.message);
+    }
 
-  // const resolverProxy = new ethers.Contract(resolver, RESOLVER_ABI, wallet);
-  // await grantSpendLimitRole(resolverProxy, fullName, bureauAddress, agentWallet);
-  // console.log("Scoped EAC role granted to CreditBureau for", SPEND_LIMIT_TEXT_KEY);
+    // 1) Deploy the agent's own Permissioned Resolver proxy via the
+    //    Verifiable Factory. The salt is deterministic, so a redeploy for
+    //    the same controller reverts once the proxy exists; recover the
+    //    existing proxy from the bureau when that happens.
+    let resolver;
+    try {
+      resolver = await deployAgentResolver(factory, agentWallet.address);
+      console.log("Permissioned Resolver:", resolver);
+    } catch (deployErr) {
+      const known = await bureau.resolverOf(agentWallet.address).catch(() => ethers.ZeroAddress);
+      if (!ethers.isAddress(known) || known === ethers.ZeroAddress) {
+        throw new Error(
+          `Resolver deployment reverted (${deployErr.reason || deployErr.message}) and no resolver is ` +
+            `recorded for ${agentWallet.address}. Use a fresh AGENT_PRIVATE_KEY/SIM_AGENT_LABEL or run ` +
+            `backend/integrations/ens/register-single-agent.js first.`
+        );
+      }
+      resolver = known;
+      console.log("Reusing previously deployed Permissioned Resolver:", resolver);
+    }
 
-  // console.log("Registering agent with CreditBureau (on-chain subname check)...");
-  // const bureauAsAgent = bureau.connect(agentWallet);
-  // const regTx = await bureauAsAgent.registerAgent(fullName, true);
-  // await regTx.wait();
-  // console.log("Agent registered. tx:", regTx.hash);
+    // 2) Mint the subname under the project root. One subname per
+    //    controller (registrar enforces it) — reuse the existing label.
+    let existingLabel = "";
+    try {
+      existingLabel = await registrar.labelOf(agentWallet.address);
+    } catch { /* registration below will surface any config issue */ }
+    if (existingLabel === label) {
+      console.log(`Subname ${fullName} already minted — reusing it.`);
+    } else if (existingLabel) {
+      // Controller already owns a different label (e.g. SIM_AGENT_LABEL
+      // changed). Registering would revert ControllerAlreadyRegistered, so
+      // report it clearly instead of failing mid-scenario.
+      throw new Error(
+        `Controller ${agentWallet.address} already owns subname ${existingLabel}.${ENS_ROOT_NAME} — ` +
+          `use SIM_AGENT_LABEL=${existingLabel} or a fresh AGENT_PRIVATE_KEY.`
+      );
+    } else {
+      await mintEnsIdentity(registrar, resolver, agentWallet, label);
+      console.log("Subname registered under", ENS_ROOT_NAME);
+    }
+
+    // 3) Scope CreditBureau's EAC role to exactly the spend-limit text key.
+    const resolverProxy = new ethers.Contract(resolver, RESOLVER_ABI, wallet);
+    try {
+      await grantSpendLimitRole(resolverProxy, fullName, bureauAddress, agentWallet);
+      console.log("Scoped EAC role granted to CreditBureau for", SPEND_LIMIT_TEXT_KEY);
+    } catch (roleErr) {
+      console.warn("grantSetterRoles failed (may already be granted):", roleErr.reason || roleErr.message);
+    }
+
+    // 4) Register with CreditBureau. Must be sent by the CONTROLLER wallet:
+    //    the bureau verifies subname ownership via getOwner on the project
+    //    registry and then writes the initial spend limit into the agent's
+    //    own resolver text record through the scoped EAC role.
+    console.log("Registering agent with CreditBureau (on-chain subname check)...");
+    const bureauAsAgent = bureau.connect(agentWallet);
+    try {
+      const regTx = await bureauAsAgent.registerAgent(fullName, true);
+      await regTx.wait();
+      console.log("Agent registered. tx:", regTx.hash);
+    } catch (regErr) {
+      if (String(regErr.reason || regErr.message).includes("already registered")) {
+        console.log("Agent was already registered with CreditBureau.");
+      } else {
+        throw regErr;
+      }
+    }
+  }
+
 
   console.log(`Running scenario "${scenario}" for ${count} transactions...`);
   for (let i = 0; i < count; i++) {

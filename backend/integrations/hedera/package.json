@@ -1,0 +1,24 @@
+{
+  "name": "agent-credit-bureau-hedera",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hedera for Credence — x402 agentic payments + ATS receivable lifecycle (ETHOnline 2026 tracks)",
+  "scripts": {
+    "start:x402": "node x402/server.js",
+    "buyer": "node x402/buyer.js",
+    "tokenize": "node scripts/tokenize-receivable.js",
+    "quote": "node scripts/quote-factoring.js",
+    "transfer": "node scripts/transfer-receivable.js",
+    "redeem": "node scripts/redeem-at-maturity.js",
+    "schedule": "node scripts/schedule-maturity-settlement.js",
+    "check": "node --check scripts/tokenize-receivable.js && node --check scripts/quote-factoring.js && node --check scripts/transfer-receivable.js && node --check scripts/redeem-at-maturity.js && node --check scripts/schedule-maturity-settlement.js && node --check x402/server.js && node --check x402/buyer.js && node --check x402/client.js && node --check x402/agent-demo.js && node --check x402/facilitator.js && node --check scripts/lib/ats.js"
+  },
+  "dependencies": {
+    "@hashgraph/asset-tokenization-sdk": "^1.0.0",
+    "@hashgraph/sdk": "^2.53.0",
+    "@x402/hedera": "^2.0.0",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.0",
+    "express": "^4.21.2"
+  }
+}

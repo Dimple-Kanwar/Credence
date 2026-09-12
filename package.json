@@ -1,5 +1,12 @@
 {
+  "scripts": {
+    "backend": "node backend/server.js",
+    "frontend": "cd frontend && npm run dev",
+    "backend:check": "node --check backend/server.js"
+  },
   "dependencies": {
+    "@worldcoin/agentkit": "^0.2.1",
+    "@worldcoin/idkit-core": "^4.2.4",
     "dotenv": "^17.4.2",
     "ethers": "^6.13.0"
   }

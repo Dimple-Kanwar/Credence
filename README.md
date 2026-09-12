@@ -5,18 +5,20 @@ agents. The name means trusted belief backed by
 evidence: agents get a portable identity, prove a real human backs them,
 build a live credit score from transaction history, and unlock graduated
 spend limits. A credit-enforcing escrow uses that limit at settlement time,
-while an AI analyst explains live Graph data and Hedera ATS can tokenize
-eligible receivables at a score-priced discount.
+while an AI analyst explains live Graph data; on Hedera, AI agents PAY for
+that analyst per call in HBAR (x402 via Blocky402) and the same live score
+prices the ATS tokenization of their receivables at a discount.
 
 ## The system
 
 | Piece | Sponsor | Role |
 |---|---|---|
 | Identity | ENSv2 | Each agent is a named subname (`trader.agentcreditbureau.eth`) with role-based permissions via Enhanced Access Control. |
-| Human backing | World | AgentKit proves a unique real human stands behind the agent, blocking Sybil farming. |
+| Human backing | World | AgentKit proves a unique real human stands behind the agent, blocking Sybil farming. **Sandbox-only**: the World ID SANDBOX (staging) is used end-to-end — AgentBook registration for the identity mint runs against the labeled sandbox registry (`backend/integrations/world/agentbook-sandbox.js`), never production World IDs. |
 | History → Score | The Graph | Indexes on-chain outcomes (payments, defaults, disputes) into a live, queryable credit score. |
 | Enforcement | CreditEscrow | Payments are rejected when they exceed the agent's current on-chain credit limit. |
-| **Receivables market** | **Hedera ATS** | **The agent's outstanding invoices are tokenized and sold to liquidity providers at a discount rate priced off the credit score.** |
+| **Receivables market** | **Hedera ATS** | **The agent's outstanding invoices are tokenized and sold to liquidity providers at a discount rate priced off the credit score — issued as ATS bonds, compliance-enforced transfer to LPs, redeemed at maturity (incl. Scheduled Transactions).** |
+| **Agent payments** | **Hedera x402** | **AI agents pay per credit call in HBAR (100 tinybar) through the Blocky402 facilitator — no API key, no seats; the MCP platform consumes the same x402 service.** |
 | Underwriting | The Graph + AI | A live subgraph report produces an explainable approve, monitor, or decline recommendation. |
 
 ## Repo layout
@@ -24,12 +26,12 @@ eligible receivables at a score-priced discount.
 ```
 contracts/         Solidity: CreditBureau.sol + CreditEscrow.sol — scoring and settlement enforcement
 subgraph/           The Graph subgraph indexing CreditBureau events into a live report
-integrations/ens/   ENSv2 subname registration + registry-based EAC permissions
-integrations/world/ World AgentKit AgentBook status verification
-integrations/graph/ Live Graph-powered credit analyst
-integrations/hedera/ Hedera Asset Tokenization Studio receivable issuance
-integrations/mcp/     MCP server: agents pull the live credit report in natural language
-integrations/bazantic/ Recipes + evidence harness so AI agents can use the credit bureau
+backend/integrations/ens/   ENSv2 subname registration + registry-based EAC permissions
+backend/integrations/world/ World AgentKit AgentBook status verification
+backend/integrations/graph/ Live Graph-powered credit analyst
+backend/integrations/hedera/ Hedera: ATS receivable issuance + full lifecycle (transfer, redemption, Scheduled Transactions) and the x402 pay-per-call credit service (server, buyer agent, autonomous agent-demo)
+backend/integrations/mcp/     MCP server: agents pull the live credit report in natural language
+backend/integrations/bazantic/ Recipes + evidence harness so AI agents can use the credit bureau
 simulator/          Scripts to generate a believable transaction history for the demo
 frontend/           React dashboard: "pull a credit report" for any agent
 docs/               Demo script and architecture notes
@@ -43,15 +45,14 @@ docs/               Demo script and architecture notes
 #    construction, and every agent registration is verified against it.
 
 # first set ENSV2_PAYMENT_TOKEN in .env (an ERC20 the hackathon registrar accepts)
-node integrations/ens/setup-agent-namespace.js agentcreditbureau
+node backend/integrations/ens/setup-agent-namespace.js agentcreditbureau
 #    -> registers agentcreditbureau.eth, deploys your UserRegistry proxy,
 #       attaches it (setSubregistry), deploys AgentSubnameRegistrar and grants
 #       it ROLE_REGISTRAR + ROLE_RENEW
 #    -> prints ENS_AGENT_REGISTRY_ADDRESS and ENS_AGENT_REGISTRAR_ADDRESS —
-#       save both into ../.env
-cd ..
+#       save both into .env (and frontend/.env for the VITE_* copies)
 
-# 1. Contracts
+# 1. Contracts (from the repo root)
 cd contracts
 npm install
 # Create .env from ../.env.example and fill in your credentials plus the
@@ -71,15 +72,20 @@ graph deploy agent-credit-bureau
 # 3. AI credit analyst against the live Graph endpoint
 cd ..
 GRAPH_ENDPOINT=https://api.studio.thegraph.com/query/1758802/agent-credit-bureau/version/latest \
-node integrations/graph/credit-analyst.js 0x<real-controller-address>
+node backend/integrations/graph/credit-analyst.js 0x<agent-address>
+
 
 # Optional model narrative; the deterministic recommendation works without it.
 OPENAI_API_KEY=... GRAPH_ENDPOINT=... \
-node integrations/graph/credit-analyst.js 0x<real-controller-address>
+node backend/integrations/graph/credit-analyst.js 0x<agent-address>
 
-# 4. Mint an agent identity (per agent): resolver + subname + EAC scope
+# 4. Mint an agent identity (per agent): WORLD AGENTBOOK REGISTRATION FIRST,
+#    then resolver + subname + EAC scope. `humanBacked` is derived from the
+#    AgentBook registration result (true only when registration succeeded).
+#    Runs on the World ID SANDBOX (staging) — labeled mock credentials, no
+#    production World IDs.
 #    ENS_AGENT_REGISTRAR_ADDRESS and CREDIT_BUREAU_ADDRESS come from .env
-node ../integrations/ens/register-single-agent.js trader 0x<agent-controller>
+node backend/integrations/ens/register-single-agent.js trader 0x<agent-controller>
 #    (optionally pass registrar + bureau + root explicitly as positional args)
 #    If the controller isn't the deployer, set CONTROLLER_PRIVATE_KEY in .env —
 #    grantSetterRoles() must be sent by the controller wallet.
@@ -90,30 +96,38 @@ node ../integrations/ens/register-single-agent.js trader 0x<agent-controller>
 #     records via its scoped EAC role.
 
 # 5. Simulator (populate a demo agent's history; mints a fresh ENSv2 identity)
-cd ../simulator
+cd simulator
 node simulate-agent.js good 60      # climb the score
 node simulate-agent.js default 1    # trigger a freeze, on a second agent
 
-# 6. Hedera ATS receivable issuance
-cd ../integrations/hedera
+# 6. Hedera: x402 agent payments + ATS receivable lifecycle
+cd ../backend/integrations/hedera
 npm install
 npm run check
-node scripts/tokenize-receivable.js 0xAgentController 1000 30
+node scripts/tokenize-receivable.js 0xAgentController 1000 30    # issue receivable bond at score-priced discount
+node scripts/quote-factoring.js 0xAgentController                 # the credit oracle price
+node scripts/transfer-receivable.js <token> <lp> <units>          # LP purchase (compliance-enforced)
+node scripts/redeem-at-maturity.js <token> <lp> <units>           # redemption at maturity
+node scripts/schedule-maturity-settlement.js <token> <lp> <units> # Scheduled Transaction maturity settlement
+# x402 pay-per-call credit services (full flow: docs/hedera-tracks.md)
+npm run start:x402                                             # 402-gated credit report + factoring rate service
+node x402/buyer.js 0xAgentController report                    # consuming agent pays per call in HBAR
+node x402/agent-demo.js 0xAgentController                      # discover -> pay -> consume -> decide
 
 # 7. Frontend
-cd ../frontend
+cd ../../../frontend
 npm install
 cp .env.example .env   # fill in VITE_CREDIT_BUREAU_ADDRESS, VITE_SUBGRAPH_URL, VITE_RPC_URL, VITE_ENS_AGENT_SUBNAME_REGISTRAR_ADDRESS
 npm run dev
 
 # 8. MCP credit-report server (agent-facing The Graph tooling)
-cd ../integrations/mcp
+cd ../backend/integrations/mcp
 npm install
 GRAPH_ENDPOINT=https://api.studio.thegraph.com/query/<id>/agent-credit-bureau/version/latest \
 node server.js        # stdio MCP server; wire into Claude Desktop / Cursor / any agent SDK
 
 # 9. Show the same flow through the Bazantic recipes (The Graph + Hedera)
-cd ../integrations/bazantic
+cd ../bazantic
 OPENAI_API_KEY=... node evidence/compare.js 0x<real-controller-address>
 ```
 
@@ -123,7 +137,8 @@ Use this exact sequence for a sponsor-grade demo and to capture real evidence be
 
 1. Create the project's ENSv2 namespace on Sepolia (run ONCE).
    ```bash
-   cd integrations/ens
+   # from the repo root
+   cd backend/integrations/ens
    node setup-agent-namespace.js agentcreditbureau
    # (requires ENSV2_PAYMENT_TOKEN in .env, then registers the root .eth name,
    #  deploys the project UserRegistry + AgentSubnameRegistrar, grants roles)
@@ -133,6 +148,7 @@ Use this exact sequence for a sponsor-grade demo and to capture real evidence be
 
 2. Deploy the bureau and escrow on Sepolia, pinned to that registry.
    ```bash
+   # from the repo root
    cd contracts
    npm run deploy:sepolia
    ```
@@ -140,38 +156,54 @@ Use this exact sequence for a sponsor-grade demo and to capture real evidence be
 
 3. Update the subgraph config to match the deployed bureau address.
    ```bash
-   cd ../subgraph
+   # from the repo root
+   cd subgraph
    node ../contracts/scripts/prepare-subgraph-config.js
    graph codegen && graph build
    ```
 
 4. Deploy the subgraph to The Graph Studio and set the live endpoint.
    ```bash
-   graph deploy agent-credit-bureau
+   # from the repo root
+   cd subgraph && graph deploy agent-credit-bureau
    ```
 
 5. Register a real ENSv2 agent identity on Sepolia and pin it to the bureau.
    ```bash
-   node ../integrations/ens/register-single-agent.js trader 0x2bdD28B49185589fC47499b5A1b35eDb4C305D3F
+   # from the repo root
+   node backend/integrations/ens/register-single-agent.js trader 0x2bdD28B49185589fC47499b5A1b35eDb4C305D3F
    # (+ set CONTROLLER_PRIVATE_KEY when the controller is not the deployer, or
    #   run the frontend's "Mint an agent identity" flow from the controller wallet)
    ```
 
-6. Verify a real human-backed agent with World AgentKit/AgentBook and push the proof on-chain.
+6. Verify a real human-backed agent with World AgentKit/AgentBook and push
+   the proof on-chain. SANDBOX: verify-agent.js reads the labeled sandbox
+   AgentBook (WORLD_ID_ENVIRONMENT=staging) — it never hits production World
+   Chain unless both WORLD_ID_ENVIRONMENT=production and
+   WORLD_ALLOW_PRODUCTION=1 are set explicitly.
    ```bash
-   node integrations/world/verify-agent.js 0x2bdD28B49185589fC47499b5A1b35eDb4C305D3F
+   # from the repo root
+   node backend/integrations/world/verify-agent.js 0x2bdD28B49185589fC47499b5A1b35eDb4C305D3F
    ```
 
 7. Run the Graph analyst using the live endpoint and capture the output.
    ```bash
+   # from the repo root
    GRAPH_ENDPOINT=https://api.studio.thegraph.com/query/<id>/<slug>/version/latest \
-   node integrations/graph/credit-analyst.js 0xYourController
+   node backend/integrations/graph/credit-analyst.js 0xYourController
    ```
 
-8. Tokenize a receivable on Hedera testnet using the live bureau score.
+8. Tokenize a receivable on Hedera testnet using the live bureau score, then
+   run the x402 agent-payment loop (docs/hedera-tracks.md has the evidence
+   checklist for both Hedera tracks).
    ```bash
-   cd integrations/hedera
+   # from the repo root
+   cd backend/integrations/hedera
    node scripts/tokenize-receivable.js 0xYourController 1000 30
+   node scripts/transfer-receivable.js <token> <lp> <units>
+   node scripts/schedule-maturity-settlement.js <token> <lp> <units> contract
+   npm run start:x402        # then, in another shell:
+   node x402/agent-demo.js 0xYourController
    ```
 
 9. Capture the proof artifacts:
@@ -201,8 +233,15 @@ secrets. The external flows require additional deployment-specific values:
 - `GRAPH_ENDPOINT` or `VITE_SUBGRAPH_URL`: a live Graph provider endpoint.
 - `HEDERA_OPERATOR_ID`, `HEDERA_OPERATOR_KEY`, `ATS_FACTORY_ADDRESS`, and
   `ATS_RESOLVER_ADDRESS`: Hedera testnet ATS configuration.
-- `WORLD_APP_ID`: AgentKit/AgentBook setup; the World script checks live
-  AgentBook status and fails closed when the wallet is not registered.
+- `X402_PAYER_ACCOUNT` + `X402_PAYER_KEY` (or reuse `HEDERA_OPERATOR_ID`/
+  `HEDERA_OPERATOR_KEY`): the consuming agent wallet that pays per credit
+  call on the x402 service; top up at https://portal.hedera.com.
+- `WORLD_APP_ID`: AgentKit/AgentBook setup; **SANDBOX ONLY** —
+  `WORLD_ID_ENVIRONMENT=staging` routes all AgentBook lookups/registrations
+  through the labeled sandbox registry (`backend/integrations/world/agentbook-sandbox.js`);
+  production World Chain is hard-disabled unless both `WORLD_ID_ENVIRONMENT=production`
+  and `WORLD_ALLOW_PRODUCTION=1` are set. The world script fails closed when the
+  wallet is not registered.
 - `AGENT_PRIVATE_KEY`: the simulator's throwaway demo-agent wallet.
 - `CONTROLLER_PRIVATE_KEY`: needed by `register-single-agent.js` to run
   `grantSetterRoles()` as the agent controller when it is not the deployer.
@@ -246,9 +285,9 @@ The repository currently validates with:
 cd contracts && npm test                 # 9 passing tests (incl. ENS ownership + EAC write path)
 cd ../frontend && npm run build          # Vite production build
 cd ../subgraph && graph codegen && graph build
-cd ../integrations/hedera && npm run check
-cd ../integrations/mcp && npm run smoke  # end-to-end MCP round trip (mock subgraph)
-node integrations/mcp/cli.js tools       # list the MCP tools, runnable from scripts
+cd ../backend/integrations/hedera && npm run check
+cd ../backend/integrations/mcp && npm run smoke  # end-to-end MCP round trip (mock subgraph)
+cd ../mcp && node cli.js tools                    # list the MCP tools, runnable from scripts
 ```
 
 Live ENSv2 registration, World AgentBook verification, Graph queries, and ATS
@@ -296,10 +335,39 @@ Project-owned deployments:
   and non-transferable identity, plus a live Enhanced Access Control
   delegation — CreditBureau is allowed to write exactly one text record
   (spend limit) into the agent's name and does so on every limit change.
-- **World — AgentKit** ($3,500): human-backing verification gating the Sybil-resistance score bonus.
-- **The Graph — Best AI Tooling/Use Case** ($5,000): live, explainable credit-line recommendations computed from indexed agent history, exposed to AI agents through a purpose-built MCP server (`integrations/mcp`) and recipes that show agents when/why/how to query the subgraph.
-- **Hedera — Tokenization of Anything** ($6,000): agent receivables tokenized via Asset Tokenization Studio, priced off the credit score.
-- **Bazantic** ($3,000): the credit bureau as a recipe — an agent-facing manual for the The Graph + Hedera workflow (`integrations/bazantic`) with an LLM comparison harness that proves the recipe improves task success.
+- **World — Selfie Check** ($3,500, scratch-built — primary World track):
+  low-friction, medium-assurance **liveness credential** (device-camera liveness
+  + facial similarity, no Orb) treated as an abuse-prevention / continuity /
+  eligibility signal. Server-side RP-signed IDKit request
+  (`selfieCheckLegacy` preset) → QR/deep-link hand-off to World App →
+  Developer Portal proof verification → recorded as `world.selfiecheck.*` ENS
+  records and flips the `CreditBureau.humanBacked` flag. See
+  `backend/integrations/world/selfie-check.js`, routes `/api/world/selfie/sign` +
+  `/api/world/selfie/verify`, the Verify World page, and the required
+  `docs/selfie-check-feedback.md`. Access-gated Beta: enable the Selfie Check
+  feature flag for your app (or demo with `WORLD_ID_MOCK=1`, clearly labeled).
+- **World — AgentKit** ($3,500): complementary high-assurance human-backing
+  signal (AgentBook registration + bot-vs-human gate) — see
+  `backend/integrations/world/agent-provision.js`, `/api/world/gate`.
+- **The Graph — Best AI Tooling/Use Case** ($5,000): live, explainable credit-line recommendations computed from indexed agent history, exposed to AI agents through a purpose-built MCP server (`backend/integrations/mcp`) and recipes that show agents when/why/how to query the subgraph.
+- **Hedera — AI & Agentic Payments** ($6,000): an x402-gated credit-report
+  service on Hedera testnet settled through the hosted Blocky402 facilitator
+  (`backend/integrations/hedera/x402`), consumed by an autonomous agent
+  (`buyer.js` / `agent-demo.js`) and by the MCP platform via the
+  `pay_for_credit_report` tool — agents pay in HBAR per call, no keys or
+  subscriptions.
+- **Hedera — Tokenization of Anything** ($6,000): agent receivables tokenized
+  via Asset Tokenization Studio as zero-coupon bonds, priced off the credit
+  score, with the full lifecycle: issuance, credit-oracle pricing,
+  compliance-enforced secondary-market transfer, redemption at maturity, and
+  Hedera Scheduled Transactions for maturity settlement
+  (`backend/integrations/hedera`). See `docs/hedera-tracks.md` for the requirement
+  mapping and demo evidence checklist.
+- **Bazantic** ($3,000): the credit bureau as a recipe — an agent-facing manual for the The Graph + Hedera workflow (`backend/integrations/bazantic`) with an LLM comparison harness that proves the recipe improves task success.
 - *(Stretch)* **Ledger — AI Agents x Ledger** ($3,500): device-backed spend-limit enforcement instead of/alongside EAC.
 
-See `docs/architecture.md` and `docs/demo-script.md` for the full story and the day-of-demo walkthrough.
+See `docs/architecture.md`, `docs/demo-script.md` (CLI walkthrough) and
+`docs/demo-script-frontend.md` — the 4-minute, frontend-driven video script
+(problem pitch, cast of agents, ENS names, Hedera credential prep, evidence
+bundle) — for the day-of-demo walkthrough. The Hedera prize requirement
+mapping lives in `docs/hedera-tracks.md`.

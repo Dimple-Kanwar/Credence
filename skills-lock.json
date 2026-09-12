@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "skills": {
+    "Hedera Agent Kit v4 Migration": {
+      "source": "hedera-dev/hedera-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/agent-kit-plugin/skills/agent-kit-v4-migration/SKILL.md",
+      "computedHash": "4c02eb1c2a21740b9bff65004eff7de548958a60c4440d5c665feb569bfe2cef"
+    },
+    "Hedera Hackathon PRD": {
+      "source": "hedera-dev/hedera-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/hackathon-helper/skills/hackathon-prd/SKILL.md",
+      "computedHash": "04a27c0bc1abfc5f280d4a4924b78ee3a7ed1479b0748a320454a8a6f8ecdb28"
+    },
+    "Hedera Hackathon Submission Validator": {
+      "source": "hedera-dev/hedera-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/hackathon-helper/skills/validate-submission/SKILL.md",
+      "computedHash": "1031b8d9e3936fad93269855d35932c2d61e28a6c54bcbeb1aa126225da366ea"
+    },
+    "agent-kit-plugin": {
+      "source": "hedera-dev/hedera-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/agent-kit-plugin/skills/agent-kit-plugin/SKILL.md",
+      "computedHash": "b368e88e8c14b592ee55a3bb5d1667708bfb71c0638c401516510f0c227589c5"
+    },
+    "x402-payments": {
+      "source": "hedera-dev/hedera-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/native-services-js/skills/x402-payments/SKILL.md",
+      "computedHash": "59b1fb3bf5fd28ac0fb6a4e855261e3b627b513d23529ec97c228f7aa19b0aa6"
+    }
+  }
+}

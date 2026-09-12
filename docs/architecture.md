@@ -28,11 +28,11 @@
    a direct, transparent function of the score — a lender/liquidity
    provider is pricing risk off publicly verifiable on-chain history rather
    than a manual underwriting call.
-6. **Agent access layer.** The MCP server (`integrations/mcp`) re-exposes
+6. **Agent access layer.** The MCP server (`backend/integrations/mcp`) re-exposes
    the subgraph as natural-language tools — `get_agent_report`,
    `get_factoring_rate`, `list_agents` — so any AI agent can pull a credit
    report and act on it directly. The Bazantic recipes
-   (`integrations/bazantic`) are the manual for those tools, including the
+   (`backend/integrations/bazantic`) are the manual for those tools, including the
    two-sponsor-API workflow (The Graph underwriting -> Hedera issuance)
    that neither API completes alone.
 

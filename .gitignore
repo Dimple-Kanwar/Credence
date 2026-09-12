@@ -6,6 +6,11 @@ artifacts/
 deployments/
 lib/
 
+# Vendored Asset Tokenization Studio repo (reference checkout; the project
+# imports @hashgraph/asset-tokenization-sdk from npm instead). 3GB+ — never
+# stage this.
+backend/integrations/hedera/asset-tokenization-studio/
+
 # Logs
 logs
 *.log
@@ -149,3 +154,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# World ID sandbox AgentBook registry (throwaway sandbox state, never commit)
+backend/integrations/world/.agentbook-sandbox.json
