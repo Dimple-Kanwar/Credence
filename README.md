@@ -319,21 +319,72 @@ score/limit history, the Graph credit analyst's evidence-backed decision
 MCP tools (list_agents, get_agent_report, get_factoring_rate) with the exact
 payload an AI agent receives, and a capability index across the whole stack.
 
+## On-chain proof: deployed contracts
+
+The following addresses are the live deployment evidence for the Credence
+demo. Each explorer link opens the contract or Hedera entity directly so
+judges can verify bytecode, transactions, events, and relationships on-chain.
+
+### Credence contracts — Ethereum Sepolia
+
+| Contract | Network | Address | Explorer |
+|---|---|---|---|
+| CreditBureau | Ethereum Sepolia | `0xc7b70Ad30e0eDEB369022C0Cb0AC611f2754f3eb` | [Etherscan](https://sepolia.etherscan.io/address/0xc7b70Ad30e0eDEB369022C0Cb0AC611f2754f3eb) |
+| CreditEscrow | Ethereum Sepolia | `0x098CEc4c453402B82726cE5E484ef1978d2D6a38` | [Etherscan](https://sepolia.etherscan.io/address/0x098CEc4c453402B82726cE5E484ef1978d2D6a38) |
+
+Deployment artifact: [`contracts/deployments/sepolia.json`](contracts/deployments/sepolia.json).
+
+### ENSv2 contracts — Ethereum Sepolia
+
+| Contract | Network | Address | Explorer |
+|---|---|---|---|
+| Project UserRegistry proxy | Ethereum Sepolia | `0x909f6ab79df535f07d700acdb38c26316b1cc644` | [Etherscan](https://sepolia.etherscan.io/address/0x909f6ab79df535f07d700acdb38c26316b1cc644) |
+| AgentSubnameRegistrar | Ethereum Sepolia | `0xB3505c1E5abd5AC10d9108f174e63B0BEfc45f47` | [Etherscan](https://sepolia.etherscan.io/address/0xB3505c1E5abd5AC10d9108f174e63B0BEfc45f47) |
+| ETHRegistry | Ethereum Sepolia | `0x1d78834d97c1d7b1a38c1dedbd1a287cfed3971e` | [Etherscan](https://sepolia.etherscan.io/address/0x1d78834d97c1d7b1a38c1dedbd1a287cfed3971e) |
+| ETHRegistrar | Ethereum Sepolia | `0x7d1b7f586a62ac3f54b9a396849757814283270b` | [Etherscan](https://sepolia.etherscan.io/address/0x7d1b7f586a62ac3f54b9a396849757814283270b) |
+| VerifiableFactory | Ethereum Sepolia | `0x894bc9cc8ff1ad96b8a288c86a8c71d662c07780` | [Etherscan](https://sepolia.etherscan.io/address/0x894bc9cc8ff1ad96b8a288c86a8c71d662c07780) |
+| UserRegistry implementation | Ethereum Sepolia | `0x47b442d0cf617c41cabaff5f02f44dd1e5f72546` | [Etherscan](https://sepolia.etherscan.io/address/0x47b442d0cf617c41cabaff5f02f44dd1e5f72546) |
+| PermissionedResolver implementation | Ethereum Sepolia | `0xa9d3814ab151bf6e37a427432795371a8361614e` | [Etherscan](https://sepolia.etherscan.io/address/0xa9d3814ab151bf6e37a427432795371a8361614e) |
+| PublicResolverV2 | Ethereum Sepolia | `0xf9de4979ddb290baf5b760d0e788125017bc33f6` | [Etherscan](https://sepolia.etherscan.io/address/0xf9de4979ddb290baf5b760d0e788125017bc33f6) |
+| UpgradableUniversalResolverProxy | Ethereum Sepolia | `0xd26f2040d083af1cd2962ba303f4bea0c4faf142` | [Etherscan](https://sepolia.etherscan.io/address/0xd26f2040d083af1cd2962ba303f4bea0c4faf142) |
+
+### Hedera ATS contracts — Hedera testnet
+
+| Contract | Network | Hedera ID | Explorer |
+|---|---|---|---|
+| ATS Factory | Hedera testnet | `0.0.9213391` | [HashScan](https://hashscan.io/testnet/contract/0.0.9213391) |
+| ATS Resolver | Hedera testnet | `0.0.9212226` | [HashScan](https://hashscan.io/testnet/contract/0.0.9212226) |
+
+Receivable bonds are created dynamically on Hedera testnet by
+`tokenize-receivable.js`; each issuance returns a new bond address and
+transaction ID, which can be opened on HashScan from the command output.
+Per-agent Permissioned Resolver proxies are also created dynamically by
+`register-single-agent.js` and are not a single shared contract address.
+
+### The Graph subgraph — Sepolia index
+
+| Item | Value |
+|---|---|
+| Subgraph | `agent-credit-bureau` |
+| Graph Studio deployment ID | `1758802` |
+| Network indexed | Ethereum Sepolia |
+| Source contract | [`CreditBureau`](https://sepolia.etherscan.io/address/0xc7b70Ad30e0eDEB369022C0Cb0AC611f2754f3eb) |
+| Indexed from block | `11675965` |
+| Live query endpoint | [`api.studio.thegraph.com/query/1758802/agent-credit-bureau/version/latest`](https://api.studio.thegraph.com/query/1758802/agent-credit-bureau/version/latest) |
+| Schema | [`subgraph/schema.graphql`](subgraph/schema.graphql) |
+| Mapping | [`subgraph/src/mapping.ts`](subgraph/src/mapping.ts) |
+
+The subgraph turns on-chain CreditBureau events into a queryable credit
+history: `Agent`, `Outcome`, `ScoreSnapshot`, and `SpendLimitChange` entities.
+It indexes `AgentRegistered`, `HumanBackingUpdated`, `OutcomeRecorded`,
+`ScoreUpdated`, `SpendLimitUpdated`, `AgentFrozen`, and `AgentUnfrozen`.
+
 ## ENSv2 hackathon deployment
 
 The ENS integration targets the dedicated ETHOnline ENSv2 beta deployment on
 Sepolia. EAC roles are implemented by the registry and resolver and are not
-managed through a separate EAC contract.
-
-| Contract | Address |
-|---|---|
-| ETHRegistry | `0x1d78834d97c1d7b1a38c1dedbd1a287cfed3971e` |
-| ETHRegistrar | `0x7d1b7f586a62ac3f54b9a396849757814283270b` |
-| PublicResolverV2 | `0xf9de4979ddb290baf5b760d0e788125017bc33f6` |
-| UpgradableUniversalResolverProxy | `0xd26f2040d083af1cd2962ba303f4bea0c4faf142` |
-| VerifiableFactory | `0x894bc9cc8ff1ad96b8a288c86a8c71d662c07780` |
-| UserRegistryImpl | `0x47b442d0cf617c41cabaff5f02f44dd1e5f72546` |
-| PermissionedResolverImpl | `0xa9d3814ab151bf6e37a427432795371a8361614e` |
+managed through a separate EAC contract. The canonical ENSv2 address registry
+with explorer links is listed above.
 
 Project-owned deployments:
 
@@ -343,59 +394,6 @@ Project-owned deployments:
 | AgentSubnameRegistrar | `ENS_AGENT_REGISTRAR_ADDRESS` | `setup-agent-namespace.js` (plain deploy) |
 | Per-agent Permissioned Resolver proxy | per controller | `register-single-agent.js` / frontend / simulator |
 
-## Sponsor tracks this targets
-
-- **ENS — Best Use of ENSv2** ($4,500): agents as ENSv2 subnames under a
-  project-owned subname registry (`AgentSubnameRegistrar` over a
-  Verifiable-Factory UserRegistry), each with its own Permissioned Resolver
-  and non-transferable identity, plus a live Enhanced Access Control
-  delegation — CreditBureau is allowed to write exactly one text record
-  (spend limit) into the agent's name and does so on every limit change.
-- **World — Selfie Check** ($3,500, scratch-built — primary World track):
-  low-friction, medium-assurance **liveness credential** (device-camera liveness
-  + facial similarity, no Orb) treated as an abuse-prevention / continuity /
-  eligibility signal. Server-side RP-signed IDKit request
-  (`selfieCheckLegacy` preset) → QR/deep-link hand-off to World App →
-  Developer Portal proof verification → recorded as `world.selfiecheck.*` ENS
-  records and flips the `CreditBureau.humanBacked` flag. See
-  `backend/integrations/world/selfie-check.js`, routes `/api/world/selfie/sign` +
-  `/api/world/selfie/verify`, the Verify World page, and the required
-  `docs/selfie-check-feedback.md`. Access-gated Beta: enable the Selfie Check
-  feature flag for your app (or demo with `WORLD_ID_MOCK=1`, clearly labeled).
-- **World — AgentKit** ($3,500): complementary high-assurance human-backing
-  signal (AgentBook registration + bot-vs-human gate) — see
-  `backend/integrations/world/agent-provision.js`, `/api/world/gate`.
-- **The Graph — Best Use of Composable or Standardized Graph Products**
-  ($5,000): the score report gets a second, standardized data leg. The app
-  runs ONE shared query shape (the Messari standardized backbone:
-  `protocols` + `usageMetricsDailySnapshots` + `financialsDailySnapshots`)
-  across DEX / lending / derivatives protocol subgraphs for directly
-  comparable TVL / revenue / usage, resolves those live deployments via The
-  Graph's hosted **Subgraph MCP** (schema lookup, query-by-subgraph-id,
-  top-deployment discovery), and exposes it all from one screen — the
-  "Cross-protocol intel", "Ask The Graph Network" and "The Graph stack"
-  panels (`backend/integrations/graph/standardized-intel.js` +
-  `graph-stack.js` + `mcp/subgraph-mcp-client.js`). A Substreams pipeline
-  (real-time credit deltas, scaffolded with the official Substreams SKILLs)
-  is the planned video centerpiece — see `docs/graph-composable-track.md`.
-  Also covers **Best AI Tooling or AI Use Case with The Graph (From Scratch,
-  $5,000)**: a purpose-built MCP server (`backend/integrations/mcp`) plus
-  the same official-Subgraph-MCP client exposed as `ask_graph_network`.
-- **Hedera — AI & Agentic Payments** ($6,000): an x402-gated credit-report
-  service on Hedera testnet settled through the hosted Blocky402 facilitator
-  (`backend/integrations/hedera/x402`), consumed by an autonomous agent
-  (`buyer.js` / `agent-demo.js`) and by the MCP platform via the
-  `pay_for_credit_report` tool — agents pay in HBAR per call, no keys or
-  subscriptions.
-- **Hedera — Tokenization of Anything** ($6,000): agent receivables tokenized
-  via Asset Tokenization Studio as zero-coupon bonds, priced off the credit
-  score, with the full lifecycle: issuance, credit-oracle pricing,
-  compliance-enforced secondary-market transfer, redemption at maturity, and
-  Hedera Scheduled Transactions for maturity settlement
-  (`backend/integrations/hedera`). See `docs/hedera-tracks.md` for the requirement
-  mapping and demo evidence checklist.
-- **Bazantic** ($3,000): the credit bureau as a recipe — an agent-facing manual for the The Graph + Hedera workflow (`backend/integrations/bazantic`) with an LLM comparison harness that proves the recipe improves task success.
-- *(Stretch)* **Ledger — AI Agents x Ledger** ($3,500): device-backed spend-limit enforcement instead of/alongside EAC.
 
 See `docs/architecture.md`, `docs/demo-script.md` (CLI walkthrough) and
 `docs/demo-script-frontend.md` — the 4-minute, frontend-driven video script
