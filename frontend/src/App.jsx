@@ -147,6 +147,13 @@ function scoreTier(score) {
   return "Restricted";
 }
 
+function formatUsd(value) {
+  return Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 // Deterministic evidence-backed recommendation, mirroring
 // integrations/graph/credit-analyst.js recommendationFor().
 function recommendationFor(agent) {
@@ -304,6 +311,8 @@ export default function App() {
   ]);
   const [chatLoading, setChatLoading] = useState(false);
   const [worldVerifying, setWorldVerifying] = useState(false);
+  const [worldVerifyResult, setWorldVerifyResult] = useState(null); // { kind: "ok" | "error", message, at } — shown below the Verify World button
+  const [registerResult, setRegisterResult] = useState(null); // { kind: "ok" | "error", message, at } — shown below the Register identity button
   const [worldStatus, setWorldStatus] = useState(null); // { registered, humanId, address } from AgentBook
   const [worldGate, setWorldGate] = useState(null); // bot-vs-human gate result
   const [worldChecking, setWorldChecking] = useState(false);
@@ -415,6 +424,7 @@ export default function App() {
         graphAgent = data.agent;
         setHistory(graphAgent?.outcomes ?? []);
         setScoreHistory(graphAgent?.scoreHistory ?? []);
+        console.log("Subgraph scoreHistory:", graphAgent?.scoreHistory ?? []);
         setLimitChanges(graphAgent?.spendLimitChanges ?? []);
       } catch (subgraphErr) {
         // Subgraph is optional for the on-chain read to still work in a demo.
@@ -493,15 +503,24 @@ export default function App() {
   }
 
   async function registerAgent() {
-    setError(null);
-    setNotice(null);
-    if (!wallet) return setError("Connect a Sepolia wallet first.");
+    setRegisterResult(null);
+    if (!wallet)
+      return setRegisterResult({ kind: "error", message: "Connect a Sepolia wallet first.", at: new Date().toISOString() });
     if (!CREDIT_BUREAU_ADDRESS)
-      return setError("CreditBureau is not configured. Set VITE_CREDIT_BUREAU_ADDRESS in frontend/.env.");
+      return setRegisterResult({
+        kind: "error",
+        message: "CreditBureau is not configured. Set VITE_CREDIT_BUREAU_ADDRESS in frontend/.env.",
+        at: new Date().toISOString(),
+      });
     if (!ENS_REGISTRAR_ADDRESS)
-      return setError("ENS registrar is not configured. Set VITE_ENS_AGENT_SUBNAME_REGISTRAR_ADDRESS in frontend/.env.");
+      return setRegisterResult({
+        kind: "error",
+        message: "ENS registrar is not configured. Set VITE_ENS_AGENT_SUBNAME_REGISTRAR_ADDRESS in frontend/.env.",
+        at: new Date().toISOString(),
+      });
     const label = registerForm.label.trim().toLowerCase();
-    if (!/^[a-z0-9-]{3,32}$/.test(label)) return setError("Use a label with 3-32 lowercase letters, numbers, or hyphens.");
+    if (!/^[a-z0-9-]{3,32}$/.test(label))
+      return setRegisterResult({ kind: "error", message: "Use a label with 3-32 lowercase letters, numbers, or hyphens.", at: new Date().toISOString() });
     setAction("register");
     try {
       const controller = await wallet.getAddress();
@@ -613,12 +632,16 @@ export default function App() {
 
       setWalletEnsName(`${label}.${ENS_ROOT_NAME}`);
       setAddressInput(controller);
-      setNotice(
-        `${label}.${ENS_ROOT_NAME} registered (${humanBacked ? "World human-backed ✓" + (worldMock ? ` · ${worldEnv} credential` : "") : "bot-only — no AgentBook proof"}). Loading its live report…`
+      setRegisterResult({
+        kind: "ok",
+        message: `${label}.${ENS_ROOT_NAME} registered (${humanBacked ? "World human-backed ✓" + (worldMock ? ` · ${worldEnv} credential` : "") : "bot-only — no AgentBook proof"}). Loading its live report…`,
+        at: new Date().toISOString(),
+      });
+      await loadAgent(controller).catch((loadErr) =>
+        console.warn("Report refresh skipped after registration:", loadErr)
       );
-      await lookupAgentFor(controller);
     } catch (err) {
-      setError(messageFor(err));
+      setRegisterResult({ kind: "error", message: messageFor(err), at: new Date().toISOString() });
     } finally {
       setAction("");
     }
@@ -926,12 +949,11 @@ export default function App() {
   }
 
   async function verifyWorldIdentity() {
-    setError(null);
-    setNotice(null);
+    setWorldVerifyResult(null);
     const label = worldLabel.trim().toLowerCase();
     const ensName = `${label}.${ENS_ROOT_NAME}`;
     if (!/^[a-z0-9-]{3,32}$/.test(label)) {
-      setError("Use a label with 3-32 lowercase letters, numbers, or hyphens.");
+      setWorldVerifyResult({ kind: "error", message: "Use a label with 3-32 lowercase letters, numbers, or hyphens.", at: new Date().toISOString() });
       return;
     }
 
@@ -944,14 +966,16 @@ export default function App() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || `World verification failed: ${response.status}`);
-      setNotice(payload.message || `World human backing confirmed for ${ensName}.`);
-      await checkWorldStatus(ensName);
-      await loadAgent(ensName);
+      setWorldVerifyResult({ kind: "ok", message: payload.message || `World human backing confirmed for ${ensName}.`, at: new Date().toISOString() });
+      await checkWorldStatus(ensName, { silent: true });
+      await loadAgent(ensName).catch((loadErr) =>
+        console.warn("Report refresh skipped after World verification (agent not yet registered with the bureau):", loadErr)
+      );
     } catch (err) {
       const detail = err instanceof TypeError
         ? `Could not reach the Credence backend at ${WORLD_VERIFY_URL}. Start it with npm run backend and check VITE_BACKEND_URL.`
         : messageFor(err);
-      setError(detail);
+      setWorldVerifyResult({ kind: "error", message: detail, at: new Date().toISOString() });
     } finally {
       setWorldVerifying(false);
     }
@@ -1377,14 +1401,20 @@ export default function App() {
               <span className="world-backing-value warn">connect wallet to verify</span>
             )}
             <em className="world-backing-hint">
-              humanBacked is derived from the World AgentBook registration (World ID SANDBOX — never production), not
-              a checkbox. The controller is registered in the AgentBook FIRST, then the ENS identity is minted with
-              humanBacked = registration succeeded.
+              humanBacked is derived from the World AgentBook registration.
             </em>
           </div>
           <button className="action-button" onClick={registerAgent} disabled={action === "register"}>
             {action === "register" ? "Waiting for wallet…" : "Register identity"}
           </button>
+          {registerResult && (
+            <div className={`gate-banner ${registerResult.kind === "ok" ? "granted" : "denied"}`}>
+              <strong>
+                {registerResult.kind === "ok" ? "✓ IDENTITY MINTED" : "✗ IDENTITY MINT FAILED"}
+              </strong>
+              <span className="status-meta">{registerResult.message}</span>
+            </div>
+          )}
         </section>}
 
         {activePage === "settle" && <section className="action-panel">
@@ -1438,11 +1468,8 @@ export default function App() {
             </span>
           </div>
           <p className="mcp-tool-desc">
-            Resolves the candidate wallet against the <strong>World AgentBook</strong> — on the World ID <strong>SANDBOX</strong>
-            for this project (<code>WORLD_ID_ENVIRONMENT=staging</code>, credentials labeled <code>mock</code>), never production
-            World Chain. The day you ship real identities, flip the backend to production with the explicit
-            <code> WORLD_ALLOW_PRODUCTION=1</code> opt-in. The same credential the bureau scores, derived live instead of
-            from a checkbox. Refreshes every 20s while this page is open.
+            Resolves the candidate wallet against the <strong>World AgentBook</strong> — on the World ID <strong>SANDBOX </strong>
+             for this project. Refreshes every 20s while this page is open.
           </p>
           <div className="world-candidate">
             <span>checking</span>
@@ -1461,16 +1488,10 @@ export default function App() {
               </dl>
               <p className={`world-verdict ${worldStatus.registered ? "ok" : "warn"}`}>
                 {worldStatus.registered
-                  ? "This wallet is registered in the World AgentBook — the bureau's humanBacked flag resolves to TRUE and the credit score carries the Sybil-resistance premium." + (worldStatus.mock ? " (Sandbox credential — clearly labeled, no production World ID involved.)" : "")
+                  ? "This wallet is registered in the World AgentBook — the bureau's humanBacked flag resolves to TRUE and the credit score carries the Sybil-resistance premium."
                   : "No human backs this wallet — the bureau treats it as a bot-only agent (humanBacked FALSE), with the score impact that implies."}
               </p>
-              {worldStatus.mock && (
-                <p className="status-meta">
-                  sandbox AgentBook only — the production canonical registry
-                  (<a className="world-link" href={AGENT_BOOK_EXPLORER} target="_blank" rel="noreferrer">{AGENT_BOOK_ADDRESS.slice(0, 10)}…{AGENT_BOOK_ADDRESS.slice(-6)} ↗</a>)
-                  is never queried by this project.
-                </p>
-              )}
+            
             </div>
           ) : worldChecking ? (
             <p className="empty">Checking World Chain AgentBook…</p>
@@ -1578,18 +1599,13 @@ export default function App() {
             >
               {selfiePhase === "signing" ? "Signing request…" : selfiePhase === "verifying" ? "Verifying proof…" : "Start Selfie Check"}
             </button>
-            {!selfieSignal() && (
-              <span className="status-meta">connect a wallet or enter a controller address to bind the proof</span>
-            )}
             {selfieStatus?.verified && (
               <button className="link-button" onClick={startSelfieCheck}>re-run (continuity check)</button>
             )}
+            {!selfieSignal() && (
+              <span className="status-meta">connect a wallet or enter a controller address to bind the proof</span>
+            )}
           </div>
-          <p className="script-hint">
-            access-gated Beta: the Selfie Check feature flag must be enabled for your Developer Portal app. Staging/sandbox
-            use the simulator (simulator.worldcoin.org) or the sandbox World ID app with <code>WORLD_ID_ENVIRONMENT=staging</code>.
-            No flag yet? Set <code>WORLD_ID_MOCK=1</code> to demo the full loop with a simulated credential (clearly labeled demo-mock).
-          </p>
         </Panel>
 
         <Panel>
@@ -1608,7 +1624,14 @@ export default function App() {
           <button className="action-button" onClick={verifyWorldIdentity} disabled={worldVerifying}>
             {worldVerifying ? "Verifying with AgentKit…" : "Verify World identity"}
           </button>
-          <p className="script-hint">backend resolves {worldLabel || "label"}.{ENS_ROOT_NAME} to its registered controller before running AgentKit verification.</p>
+          {worldVerifyResult && (
+            <div className={`gate-banner ${worldVerifyResult.kind === "ok" ? "granted" : "denied"}`}>
+              <strong>
+                {worldVerifyResult.kind === "ok" ? "✓ WORLD IDENTITY VERIFIED" : "✗ WORLD VERIFICATION FAILED"}
+              </strong>
+              <span className="status-meta">{worldVerifyResult.message}</span>
+            </div>
+          )}
         </Panel>
 
         <Panel>
@@ -1722,13 +1745,9 @@ export default function App() {
                   </blockquote>
                 ) : (
                   <p className="narrative-empty">
-                    Narrative leg runs server-side via <code>integrations/graph/credit-analyst.js</code> or the
-                    MCP <code>get_agent_report</code> tool when an OpenAI key is configured; set
-                    VITE_OPENAI_API_KEY to enable it in-browser. The deterministic decision above uses only
-                    on-chain / Graph data.
+                    The deterministic decision above uses only on-chain Graph data.
                   </p>
                 )}
-                <p className="script-hint">script: node integrations/graph/credit-analyst.js {profile.controller}</p>
               </>
             ) : (
               <p className="empty">Pull a report to run the analyst.</p>
@@ -2131,8 +2150,7 @@ export default function App() {
             </button>
           </div>
           <p className="mcp-tool-desc">
-            The ranked credit universe — agents ordered by score, with human-backing and frozen flags. Same
-            query: <code>LIST_AGENTS_QUERY</code> in the MCP server.
+            The ranked credit universe — agents ordered by score, with human-backing and frozen flags.
           </p>
           {leaderboard && (
             <>
@@ -2207,7 +2225,75 @@ export default function App() {
             />
             <span className="suffix">USD</span>
           </div>
-          {factoring && <pre className="mcp-json compact">{JSON.stringify(factoring, null, 2)}</pre>}
+          {factoring && (
+            <div className={`factoring-quote ${factoring.eligible ? "eligible" : "ineligible"}`}>
+              <div className="factoring-quote-top">
+                <div className="factoring-quote-agent">
+                  <span className="factoring-quote-ens" title={factoring.ensName}>{factoring.ensName}</span>
+                  <span className="factoring-quote-controller">{factoring.controller}</span>
+                </div>
+                <span className={`factoring-badge ${factoring.eligible ? "ok" : "warn"}`}>
+                  {factoring.eligible ? "✓ ELIGIBLE" : "✗ NOT ELIGIBLE"}
+                </span>
+              </div>
+
+              {factoring.eligible ? (
+                <>
+                  <div className="factoring-body">
+                    <div className="factoring-metrics">
+                      <div className="factoring-metric">
+                        <span className="metric-label">Credit score</span>
+                        <span className="metric-value">
+                          {factoring.score}<em> / 1000 · {scoreTier(factoring.score)}</em>
+                        </span>
+                      </div>
+                      <div className="factoring-metric">
+                        <span className="metric-label">Discount rate</span>
+                        <span className="metric-value accent">−{factoring.discountPercent}%</span>
+                      </div>
+                    </div>
+
+                    {factoring.faceValueUsd ? (
+                      <div className="factoring-pricing">
+                        <div className="pricing-leg">
+                          <span className="pricing-label">Face value</span>
+                          <strong className="pricing-amount">${formatUsd(factoring.faceValueUsd)}</strong>
+                        </div>
+                        <span className="pricing-arrow" title="Lender's purchase discount">−{factoring.discountPercent}%</span>
+                        <div className="pricing-leg sale">
+                          <span className="pricing-label">Sale price</span>
+                          <strong className="pricing-amount">${formatUsd(factoring.pricedSaleUsd)}</strong>
+                        </div>
+                        <span className="pricing-margin">
+                          +${formatUsd(factoring.faceValueUsd - factoring.pricedSaleUsd)} discount for the LP
+                        </span>
+                      </div>
+                    ) : (
+                      <p className="factoring-enter-value">Enter a face value above to see the priced sale amount.</p>
+                    )}
+                  </div>
+
+                  <div className="factoring-quote-foot">
+                    <code className="factoring-cmd">
+                      node integrations/hedera/scripts/tokenize-receivable.js {factoring.controller}{" "}
+                      {factoring.faceValueUsd ? factoring.faceValueUsd : "<faceUsd>"} 30
+                    </code>
+                    <span className="script-hint">Tokenize on Hedera testnet — the same score prices the bond.</span>
+                  </div>
+                </>
+              ) : (
+                <div className="factoring-denied">
+                  <span className="factoring-denied-icon">✗</span>
+                  <div>
+                    <strong>
+                      {factoring.frozen ? "Agent frozen — receivables locked" : "Below the factoring threshold"}
+                    </strong>
+                    <p>{factoring.note}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </section>}
 
@@ -2304,7 +2390,8 @@ export default function App() {
           <span className="panel-index">09 · SIMULATION</span>
           <h3>Simulator</h3>
           <p>
-            simulate-agent.js mints a fresh ENSv2 identity and drives a believable history — good / mixed /
+            simulate-agent.js appends a believable on-chain history to an already-registered
+            agent (register via the frontend first) — good / mixed /
             default scenarios for demos.
           </p>
           <span className="cap-status script">script: node simulator/simulate-agent.js good 60</span>

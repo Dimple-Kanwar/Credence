@@ -95,7 +95,8 @@ node backend/integrations/ens/register-single-agent.js trader 0x<agent-controlle
 #     bureau writes the initial spend limit into the agent's own resolver text
 #     records via its scoped EAC role.
 
-# 5. Simulator (populate a demo agent's history; mints a fresh ENSv2 identity)
+# 5. Simulator (append history to an already-registered demo agent; register
+#    via the frontend "Register identity" flow first)
 cd simulator
 node simulate-agent.js good 60      # climb the score
 node simulate-agent.js default 1    # trigger a freeze, on a second agent

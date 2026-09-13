@@ -73,8 +73,7 @@ async function verifyHumanBacking(controllerAddress, options = {}) {
     }
     if (!status.registered) {
       throw new Error(
-        `No unique human verified for ${status.address}. Complete the proof in the World App ` +
-          `(${worldAppVerifyUrl(status.address)}) or run: npx --yes @worldcoin/agentkit-cli register ${status.address}`
+        `No unique human verified for ${status.address}.`
       );
     }
   }
@@ -137,12 +136,19 @@ if (require.main === module) {
     return;
   }
   const [controllerAddress] = args;
+  // Only read a flag's value when the flag was actually passed — indexOf
+  // returns -1 for absent flags and would otherwise pick up the controller
+  // address as the option value (e.g. --header missing -> args[0]).
+  function flagValue(flag) {
+    const i = args.indexOf(flag);
+    return i >= 0 ? args[i + 1] : undefined;
+  }
   const options = {
     autoRegister: args.includes("--auto-register"),
     writeEnsIdentity: args.includes("--ens-name"),
-    ensName: args[args.indexOf("--ens-name") + 1],
-    agentkitHeader: args[args.indexOf("--header") + 1],
-    resourceUri: args[args.indexOf("--uri") + 1],
+    ensName: flagValue("--ens-name"),
+    agentkitHeader: flagValue("--header"),
+    resourceUri: flagValue("--uri"),
   };
   if (!controllerAddress) {
     console.error(

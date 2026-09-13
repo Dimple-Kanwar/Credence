@@ -821,6 +821,225 @@ body {
   font-family: var(--font-mono);
 }
 
+/* get_factoring_rate quote card (Graph tools) */
+
+.factoring-quote {
+  margin-top: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.factoring-quote.eligible {
+  border-color: color-mix(in srgb, var(--acid) 35%, var(--hairline));
+}
+
+.factoring-quote.ineligible {
+  border-color: color-mix(in srgb, var(--alert) 35%, var(--hairline));
+}
+
+.factoring-quote-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.factoring-quote-agent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.factoring-quote-ens {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.factoring-quote-controller {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.factoring-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.factoring-badge.ok {
+  color: var(--acid);
+  border: 1px solid color-mix(in srgb, var(--acid) 45%, transparent);
+  background: color-mix(in srgb, var(--acid) 8%, transparent);
+}
+
+.factoring-badge.warn {
+  color: var(--alert);
+  border: 1px solid color-mix(in srgb, var(--alert) 45%, transparent);
+  background: color-mix(in srgb, var(--alert) 8%, transparent);
+}
+
+.factoring-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.factoring-metrics {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.factoring-metric {
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 10px 14px;
+  min-width: 168px;
+  background: rgba(30, 39, 51, 0.35);
+}
+
+.metric-label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: 6px;
+}
+
+.metric-value {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  color: var(--ink);
+}
+
+.metric-value em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--ink-dim);
+  font-family: var(--font-sans);
+}
+
+.metric-value.accent {
+  color: var(--acid);
+}
+
+.factoring-pricing {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  border: 1px dashed var(--line-bright);
+  border-radius: 4px;
+  padding: 12px 16px;
+  background: var(--surface);
+}
+
+.pricing-leg {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pricing-leg.sale .pricing-amount {
+  color: var(--acid);
+}
+
+.pricing-label {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.pricing-amount {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.pricing-arrow {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--gold);
+  border: 1px solid color-mix(in srgb, var(--gold) 40%, transparent);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.pricing-margin {
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+.factoring-enter-value {
+  font-size: 12px;
+  color: var(--ink-dim);
+  margin: 0;
+}
+
+.factoring-quote-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--hairline);
+  background: rgba(30, 39, 51, 0.3);
+}
+
+.factoring-cmd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--sky);
+  background: var(--slate-900);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.factoring-denied {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+}
+
+.factoring-denied-icon {
+  color: var(--alert);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.factoring-denied strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.factoring-denied p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--ink-dim);
+  line-height: 1.5;
+}
+
 /* MCP tools panel */
 
 .mcp-section {

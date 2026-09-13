@@ -29,9 +29,15 @@ const path = require("node:path");
  *  during the demo (gitignored — this is throwaway sandbox state). */
 const STORE_FILE = path.join(__dirname, ".agentbook-sandbox.json");
 
-const registry = loadStore();
-
-function loadStore() {
+/**
+ * Read the registry fresh from disk on every call. The dev backend can run
+ * for hours while registrations happen in OTHER processes (the CLI scripts,
+ * the standalone http-server, a second backend instance, curl) — a module-
+ * scope snapshot would silently serve stale lookups and produce exactly the
+ * "address is registered but verification says it isn't" failure. The store
+ * is tiny, so a fresh read per lookup is free.
+ */
+function readStore() {
   try {
     if (fs.existsSync(STORE_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(STORE_FILE, "utf8"));
@@ -43,7 +49,7 @@ function loadStore() {
   return {};
 }
 
-function saveStore() {
+function saveStore(registry) {
   try {
     fs.mkdirSync(path.dirname(STORE_FILE), { recursive: true });
     fs.writeFileSync(STORE_FILE, JSON.stringify(registry, null, 2));
@@ -100,10 +106,11 @@ async function sandboxRegister(address) {
   assertSandboxOnly();
   const normalized = ethers.getAddress(address);
   const key = normalized.toLowerCase();
+  const registry = readStore();
   const existing = registry[key];
   const record = existing && existing.humanId ? existing : { humanId: mockHumanIdFor(normalized) };
   registry[key] = { ...record, registeredAt: existing?.registeredAt || new Date().toISOString() };
-  saveStore();
+  saveStore(registry);
   return {
     registered: true,
     humanId: record.humanId,
@@ -125,7 +132,7 @@ async function sandboxLookup(address) {
   assertSandboxOnly();
   const normalized = ethers.getAddress(address);
   const key = normalized.toLowerCase();
-  const record = registry[key];
+  const record = readStore()[key];
   if (!record || !record.humanId) return null;
   return {
     registered: true,

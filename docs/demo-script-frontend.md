@@ -42,8 +42,8 @@ mechanism without eating video time:
 
 | ENS name | Role in the demo | Controller wallet | Why |
 |---|---|---|---|
-| `alpha.trader.agentcreditbureau.eth` | **The star** — Prime borrower | wallet A | 60 clean outcomes → score 880–950, human-backed, 1–3% factoring rate. Pays for its report, factors a $1,000 invoice, sells to the LP. |
-| `nova.analyst.agentcreditbureau.eth` | **Mid-tier** marketplace color | wallet B | ~40 clean outcomes → score ~650–799 (Building). Makes `list_agents` ranking look real and shows different agents get different rates. |
+| `alpha-trader.agentcreditbureau.eth` | **The star** — Prime borrower | wallet A | 60 clean outcomes → score 880–950, human-backed, 1–3% factoring rate. Pays for its report, factors a $1,000 invoice, sells to the LP. |
+| `nova-analyst.agentcreditbureau.eth` | **Mid-tier** marketplace color | wallet B | ~40 clean outcomes → score ~650–799 (Building). Makes `list_agents` ranking look real and shows different agents get different rates. |
 | `rex.trader.agentcreditbureau.eth` | **The defaulter** — risk counter-example | wallet C | One default → frozen, spend limit → 0, factoring declined. Proves the system fails closed. |
 | `zoe.trader.agentcreditbureau.eth` | **New borrower** — registered LIVE in the video | MetaMask-connected wallet | Starts at score 500 (New) and is the live frontend registration. Proves a fresh agent can be on-boarded in seconds and still pay/borrow. |
 
@@ -82,18 +82,18 @@ named, register `mercury.lp.agentcreditbureau.eth` (same flow, 10 seconds).
    - Sanity-check with: `curl http://127.0.0.1:8787/api/hedera/status` — all
      four pills on the Hedera tab should read live.
 2. **Populate credit history** (offscreen, before recording). The simulator
-   drives the agent whose private key is `AGENT_PRIVATE_KEY`, so run it once
-   per controller with the matching key and label:
+   appends history to an ALREADY-REGISTERED controller — it no longer mints
+   identities (the frontend does that). Point it at each controller with
+   `SIM_AGENT_CONTROLLER` (or `AGENT_PRIVATE_KEY` fallback):
    - Register the three subnames first (skip if you already did via the
      frontend during setup):
      `node backend/integrations/ens/register-single-agent.js alpha <walletA>`
      `node backend/integrations/ens/register-single-agent.js nova <walletB>`
      `node backend/integrations/ens/register-single-agent.js rex <walletC>`
    - Seed history (~2–3 min of tx; reduce `60`→`40` if short on time):
-     `cd simulator`
-     `SIM_AGENT_LABEL=alpha AGENT_PRIVATE_KEY=<walletA> node simulate-agent.js good 60`
-     `SIM_AGENT_LABEL=nova  AGENT_PRIVATE_KEY=<walletB> node simulate-agent.js good 40`
-     `SIM_AGENT_LABEL=rex   AGENT_PRIVATE_KEY=<walletC> node simulate-agent.js default 1`
+     `AGENT_PRIVATE_KEY=<walletA-pk> SIM_AGENT_CONTROLLER=<walletA> node simulator/simulate-agent.js good 60`
+     `AGENT_PRIVATE_KEY=<walletB-pk> SIM_AGENT_CONTROLLER=<walletB> node simulator/simulate-agent.js good 40`
+     `AGENT_PRIVATE_KEY=<walletC-pk> SIM_AGENT_CONTROLLER=<walletC> node simulator/simulate-agent.js default 1`
    - Wait for the subgraph to index (check the Graph tools `list_agents`).
    - `zoe` gets NO history — she is registered live in the video and starts
      at score 500 (New), which is exactly the story.
@@ -138,7 +138,7 @@ your on-screen proof that everything is configured.
   shield baked into the score."
 
 ### 1:10–1:40 — THE CREDIT REPORT (`Reports`)
-- Enter `alpha.trader.agentcreditbureau.eth` → **Pull report**.
+- Enter `alpha-trader.agentcreditbureau.eth` → **Pull report**.
 - Point at: score (880+, Prime), spend limit, clean outcome table, sparkline,
   and the analyst decision "approve" with its evidence list.
 - Quick contrast: pull `rex.trader.agentcreditbureau.eth` → frozen, 0 limit,
@@ -152,7 +152,7 @@ your on-screen proof that everything is configured.
   screen."
 
 ### 1:55–2:25 — HEDERA: THE AGENT PAYS FOR ITS OWN REPORT (`Hedera payments`)
-- Hedera tab. Status pills all live. Enter `alpha.trader.agentcreditbureau.eth`.
+- Hedera tab. Status pills all live. Enter `alpha-trader.agentcreditbureau.eth`.
 - **Pay for report** → watch it return the report + payment tx + HashScan link.
 - Narrate: "100 tinybar. The agent's own wallet signed an HBAR transfer;
   Blocky402 verified and settled it; the service delivered the report. No API
@@ -217,7 +217,7 @@ your on-screen proof that everything is configured.
 1. Frontend recording (≤5 min — the sequence above).
 2. HashScan links: x402 report payment (CRYPTOTRANSFER SUCCESS), x402 quote
    payment, ATS bond issuance, LP transfer, schedule id (and redeem tx).
-3. Etherscan links: `alpha.trader.agentcreditbureau.eth` registration +
+3. Etherscan links: `alpha-trader.agentcreditbureau.eth` registration +
    resolver + EAC grant, CreditBureau profile tx, escrow settlements.
 4. Subgraph Studio query output for `AgentHistory` (score/history/lastEvents).
 5. `curl /api/hedera/status` output (proves live config).

@@ -10,9 +10,9 @@
    text record. Then show the World AgentKit human-backing verification
    confirming on-chain.
 
-3. **Score climbs (40s).** Run `simulate-agent.js good 60` against a fresh
-   demo agent — the script mints a brand-new ENSv2 identity for that agent
-   (resolver + subname + EAC scope) before driving 60 clean outcomes. Show the
+3. **Score climbs (40s).** Run `simulate-agent.js good 60` against an
+   agent you registered in the frontend — the script only drives the
+   on-chain history (score + spend limit react to each outcome). Show the
    dashboard's score number ticking up and the spend limit tier upgrading
    live — narrate the tiers as they cross ($10/day -> higher tiers). Point out
    that the limit change also lands in the agent's own ENS name records
