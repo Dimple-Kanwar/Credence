@@ -29,6 +29,7 @@ const {
   ContractId,
 } = require("@hashgraph/sdk");
 const { connectAts } = require("./lib/ats.js");
+const { hashscanUrl } = require("./lib/hashscan.js");
 
 const EXECUTE_METHOD = "redeemAtMaturityByPartition";
 const DEFAULT_PARTITION = `0x${"0".repeat(64)}`;
@@ -109,13 +110,13 @@ async function scheduleMaturitySettlement({
   console.log(`Scheduled: ${scheduledTxId}`);
   console.log(`Schedule ID: ${scheduleId}`);
   console.log(`Memo: ${scheduleMemo}`);
-  const dash = String(response.transactionId).replace("@", "-");
-  console.log("HashScan:", `https://hashscan.io/testnet/transaction/${dash}`);
+  const url = await hashscanUrl(String(response.transactionId));
+  if (url) console.log("HashScan:", url);
 
   return {
     mode,
     scheduleId,
-    scheduleTxId: dash,
+    scheduleTxId: String(response.transactionId),
     scheduledTransaction: scheduledTxId,
     executeAtUnixSeconds: executeAtUnixSeconds || null,
     note:

@@ -37,6 +37,8 @@ const {
   getAgentReport,
   getFactoringRate,
   listAgents,
+  getMarketIntel,
+  askGraphNetwork,
 } = require("./tools.js");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
@@ -143,6 +145,70 @@ async function main() {
         };
       } catch (error) {
         return toolError("Could not list agents.", "Check GRAPH_ENDPOINT and that the subgraph has indexed agents.");
+      }
+    }
+  );
+
+  // ---------------------------------------------------------------------
+  // get_market_intel — cross-protocol intel via Messari standardized subgraphs
+  // ---------------------------------------------------------------------
+  server.registerTool(
+    "get_market_intel",
+    {
+      title: "Cross-protocol market intel (Messari standardized subgraphs)",
+      description:
+        "Return cross-protocol market intel from Messari Standardized Subgraphs (The Graph composable/standardized track): ONE shared query shape (protocol + usage + financial snapshots) run across multiple protocol subgraphs (DEX, lending, derivatives) so TVL, revenue and usage are directly comparable. Requires GRAPH_STANDARD_ENDPOINTS or a GRAPH_API_KEY for live discovery via the Subgraph MCP.",
+      inputSchema: {
+        controller: z
+          .string()
+          .optional()
+          .describe("Optional agent controller address (0x…) to contextualize the intel — leave empty for market-wide data"),
+      },
+    },
+    async ({ controller: input }) => {
+      try {
+        const result = await getMarketIntel(input);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (error) {
+        return toolError("Could not pull cross-protocol intel.", String(error?.message || error));
+      }
+    }
+  );
+
+  // ---------------------------------------------------------------------
+  // ask_graph_network — natural-language access to The Graph's hosted
+  // Subgraph MCP (schema lookup / query by subgraph id / deployment
+  // discovery) — the official server, driven from this CLI/MCP tool.
+  // ---------------------------------------------------------------------
+  server.registerTool(
+    "ask_graph_network",
+    {
+      title: "Ask The Graph Network (official Subgraph MCP)",
+      description:
+        "Ask a natural-language question and get it routed to The Graph's official hosted Subgraph MCP server (subgraphs.mcp.thegraph.com/sse) using your GRAPH_API_KEY. Supports discovering top subgraph deployments (by keyword or contract address), fetching a subgraph schema, or executing a query by subgraph id. Returns a transcript of the tools it exercised on the official server.",
+      inputSchema: {
+        prompt: z.string().describe("Natural-language request, e.g. \"discover top subgraphs for 0x<contract>\" or a subgraph id to query"),
+      },
+    },
+    async ({ prompt }) => {
+      try {
+        const result = await askGraphNetwork(prompt);
+        const text = result.answer
+          ? JSON.stringify(
+              {
+                prompt: result.prompt,
+                answer: result.answer,
+                transcript: result.transcript,
+                hint: result.hint || undefined,
+                error: result.error || undefined,
+              },
+              null,
+              2,
+            )
+          : JSON.stringify(result, null, 2);
+        return { content: [{ type: "text", text }] };
+      } catch (error) {
+        return toolError("ask_graph_network failed.", String(error?.message || error));
       }
     }
   );

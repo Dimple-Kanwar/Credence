@@ -39,7 +39,7 @@ async function runAgentDemo(controller) {
   console.log("[1/3] credit-report (100 tinybar)");
   const report = await payFor("credit-report", controller);
   console.log(`      ${report.ensName} score ${report.score} [${report.tier}]`);
-  console.log(`      paid tx ${hashscanTx(report.payment?.transactionId)}`);
+  console.log(`      paid tx ${await hashscanTx(report.payment?.transactionId)}`);
 
   // 2) pay for the factoring-rate quote (credit oracle pricing)
   console.log("[2/3] factoring-rate (50 tinybar)");
@@ -47,7 +47,7 @@ async function runAgentDemo(controller) {
   console.log(
     `      eligible ${quote.eligible} | discount ${quote.discountPercent ?? "—"}%`,
   );
-  console.log(`      paid tx ${hashscanTx(quote.payment?.transactionId)}`);
+  console.log(`      paid tx ${await hashscanTx(quote.payment?.transactionId)}`);
 
   // 3) act on what was paid for — a real decision with spend + ATS state
   console.log("[3/3] decision");

@@ -11,11 +11,14 @@
  *   node integrations/mcp/cli.js list_agents [first]
  *   node integrations/mcp/cli.js get_agent_report <controller|ensName>
  *   node integrations/mcp/cli.js get_factoring_rate <controller|ensName> [faceValueUsd]
+ *   node integrations/mcp/cli.js get_market_intel [controller|ensName]
+ *   node integrations/mcp/cli.js ask_graph_network "<prompt>"
  *   node integrations/mcp/cli.js tools
  *
  * Requires GRAPH_ENDPOINT (or VITE_SUBGRAPH_URL); optionally
  * OPENAI_API_KEY for the narrative leg, SEPOLIA_RPC_URL +
- * CREDIT_BUREAU_ADDRESS to resolve ENSv2 names.
+ * CREDIT_BUREAU_ADDRESS to resolve ENSv2 names, GRAPH_API_KEY for the
+ * composable legs (standardized intel + official Subgraph MCP).
  */
 require("dotenv").config();
 const { isAddress, ZeroAddress, JsonRpcProvider, Contract } = require("ethers");
@@ -175,6 +178,8 @@ async function main() {
             { name: "list_agents", args: "[first]" },
             { name: "get_agent_report", args: "<controller|ensName>" },
             { name: "get_factoring_rate", args: "<controller|ensName> [faceValueUsd]" },
+            { name: "get_market_intel", args: "[controller|ensName] — Messari standardized subgraphs, one query shape across protocols" },
+            { name: "ask_graph_network", args: "\"<prompt>\" — routes to The Graph's official hosted Subgraph MCP" },
             { name: "pay_for_credit_report", args: "<controller|ensName> [report|rate] — Hedera x402, requires the x402 server + payer wallet" },
           ],
           null,
@@ -199,6 +204,25 @@ async function main() {
       if (!rest[0]) throw new Error("get_factoring_rate requires <controller|ensName>");
       const result = await factoringRate(rest[0], rest[1] !== undefined ? Number(rest[1]) : undefined);
       console.log(typeof result === "string" ? result : JSON.stringify(result, null, 2));
+      break;
+    }
+    case "get_market_intel": {
+      const { fetchStandardizedIntel } = require("../graph/standardized-intel.js");
+      const controller = rest[0] ? await resolveController(rest[0]) : null;
+      console.log(JSON.stringify(await fetchStandardizedIntel(controller), null, 2));
+      break;
+    }
+    case "ask_graph_network": {
+      const { askSubgraphMcp } = require("./subgraph-mcp-client.js");
+      const { STANDARD_PROTOCOL_QUERY, STANDARD_PROVIDERS } = require("../graph/standardized-intel.js");
+      if (!rest[0]) throw new Error("ask_graph_network requires a \"<prompt>\"");
+      console.log(
+        JSON.stringify(
+          await askSubgraphMcp(rest.join(" "), { providers: STANDARD_PROVIDERS, query: STANDARD_PROTOCOL_QUERY }),
+          null,
+          2
+        )
+      );
       break;
     }
     case "pay_for_credit_report": {
@@ -226,7 +250,7 @@ async function main() {
     }
     default:
       console.error(
-        "Usage: node integrations/mcp/cli.js <tools|list_agents|get_agent_report|get_factoring_rate> [args]"
+        "Usage: node integrations/mcp/cli.js <tools|list_agents|get_agent_report|get_factoring_rate|get_market_intel|ask_graph_network> [args]"
       );
       process.exit(1);
   }

@@ -79,6 +79,21 @@ node backend/integrations/graph/credit-analyst.js 0x<agent-address>
 OPENAI_API_KEY=... GRAPH_ENDPOINT=... \
 node backend/integrations/graph/credit-analyst.js 0x<agent-address>
 
+# 3b. Graph composition (ETHOnline 2026 composable/standardized track):
+#     cross-protocol intel + the official Subgraph MCP need a free Gateway
+#     API key (https://thegraph.com/studio/) set as GRAPH_API_KEY in .env.
+cd ../backend/integrations/graph   # modules: standardized-intel.js, graph-stack.js
+node --check standardized-intel.js # quick sanity
+# exercise from the backend:
+curl http://127.0.0.1:8787/api/graph/stack            # stack status (per-leg)
+curl -X POST http://127.0.0.1:8787/api/graph/intel \
+  -H 'content-type: application/json' -d '{}'         # market-wide intel
+curl -X POST http://127.0.0.1:8787/api/graph/ask \
+  -H 'content-type: application/json' \
+  -d '{"prompt":"discover the top subgraphs indexing contract 0x…"}'
+# Same capabilities as MCP tools: get_market_intel + ask_graph_network
+cd ../mcp && npm run smoke
+
 # 4. Mint an agent identity (per agent): WORLD AGENTBOOK REGISTRATION FIRST,
 #    then resolver + subname + EAC scope. `humanBacked` is derived from the
 #    AgentBook registration result (true only when registration succeeded).
@@ -350,7 +365,22 @@ Project-owned deployments:
 - **World — AgentKit** ($3,500): complementary high-assurance human-backing
   signal (AgentBook registration + bot-vs-human gate) — see
   `backend/integrations/world/agent-provision.js`, `/api/world/gate`.
-- **The Graph — Best AI Tooling/Use Case** ($5,000): live, explainable credit-line recommendations computed from indexed agent history, exposed to AI agents through a purpose-built MCP server (`backend/integrations/mcp`) and recipes that show agents when/why/how to query the subgraph.
+- **The Graph — Best Use of Composable or Standardized Graph Products**
+  ($5,000): the score report gets a second, standardized data leg. The app
+  runs ONE shared query shape (the Messari standardized backbone:
+  `protocols` + `usageMetricsDailySnapshots` + `financialsDailySnapshots`)
+  across DEX / lending / derivatives protocol subgraphs for directly
+  comparable TVL / revenue / usage, resolves those live deployments via The
+  Graph's hosted **Subgraph MCP** (schema lookup, query-by-subgraph-id,
+  top-deployment discovery), and exposes it all from one screen — the
+  "Cross-protocol intel", "Ask The Graph Network" and "The Graph stack"
+  panels (`backend/integrations/graph/standardized-intel.js` +
+  `graph-stack.js` + `mcp/subgraph-mcp-client.js`). A Substreams pipeline
+  (real-time credit deltas, scaffolded with the official Substreams SKILLs)
+  is the planned video centerpiece — see `docs/graph-composable-track.md`.
+  Also covers **Best AI Tooling or AI Use Case with The Graph (From Scratch,
+  $5,000)**: a purpose-built MCP server (`backend/integrations/mcp`) plus
+  the same official-Subgraph-MCP client exposed as `ask_graph_network`.
 - **Hedera — AI & Agentic Payments** ($6,000): an x402-gated credit-report
   service on Hedera testnet settled through the hosted Blocky402 facilitator
   (`backend/integrations/hedera/x402`), consumed by an autonomous agent

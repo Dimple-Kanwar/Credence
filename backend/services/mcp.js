@@ -4,10 +4,17 @@ const {
   getFactoringRate,
   listAgents,
   resolveController,
+  getMarketIntel,
+  askGraphNetwork,
 } = require("../integrations/mcp/tools.js");
+const { graphStackStatus } = require("../integrations/graph/graph-stack.js");
 
 async function report(payload) {
   return getAgentReport(payload.controller);
+}
+
+async function askGraphNetworkViaHttp(payload) {
+  return askGraphNetwork(payload.prompt, payload.controller);
 }
 
 async function gatedReport(payload, request) {
@@ -30,9 +37,12 @@ async function gatedReport(payload, request) {
 
 module.exports = {
   answerChat,
+  askGraphNetwork: askGraphNetworkViaHttp, // wrapper: unpacks { prompt, controller } from the HTTP route
   gatedReport,
   getAgentReport,
   getFactoringRate,
+  getMarketIntel,
+  graphStackStatus,
   listAgents,
   report,
   resolveController,

@@ -19,6 +19,7 @@ async function tokenize(payload) {
 async function payFor(servicePath, controller) {
   const x402 = await import("../integrations/hedera/x402/client.js");
   const body = await x402.payFor(servicePath, controller);
+  console.log(`Hedera payFor(${servicePath}, ${controller}) returned:`, body);
   return { ...body, payerWallet: x402.readPayerConfig().account };
 }
 

@@ -43,6 +43,7 @@ const {
   connectAts,
   maturityTimestamp,
 } = require("./lib/ats.js");
+const { hashscanUrl } = require("./lib/hashscan.js");
 
 async function tokenizeReceivable({ controllerAddress, invoiceFaceValueUsd, maturityDays }) {
   const profile = await getAgentProfile(controllerAddress);
@@ -59,16 +60,18 @@ async function tokenizeReceivable({ controllerAddress, invoiceFaceValueUsd, matu
 
   const faceValueUsd = invoiceFaceValueUsd;
   const discountedPriceUsd = Number((faceValueUsd * (1 - discountRate)).toFixed(2));
-  const now = Math.floor(Date.now() / 1000);
+  const now = Math.ceil(Date.now() / 1000) + 1;
   const maturity = maturityTimestamp(maturityDays);
 
   console.log(`Agent: ${ensName} | score: ${score} | discount rate: ${discountRate * 100}%`);
   console.log(`Face value: $${faceValueUsd} -> tokenized sale price: $${discountedPriceUsd}`);
   console.log(`Maturity: ${new Date(Number(maturity) * 1000).toISOString()} (${maturityDays} days)`);
 
-  await connectAts();
-
-  // Zero-coupon bond: $0.01 (=1 unit) per invoice cent — face value == units total.
+  // diamondOwnerAccount is REQUIRED by the ATS SDK: it becomes the RBAC
+  // _DEFAULT_ADMIN_ROLE member of the new diamond. Omitting it makes the SDK
+  // call new EvmAddress(undefined), which throws on undefined.length.
+  const { operatorEvmAddress } = await connectAts();
+  console.log(`Issuing receivable bond on Hedera ATS for agent ${ensName}...`);
   const token = await Bond.create(
     new CreateBondRequest({
       name: `Receivable - ${ensName}`,
@@ -82,12 +85,17 @@ async function tokenizeReceivable({ controllerAddress, invoiceFaceValueUsd, matu
       isMultiPartition: false,
       clearingActive: false,
       internalKycActivated: true,
+      externalPausesIds: [],
+      externalControlListsIds: [],
+      externalKycListsIds: [],
+      diamondOwnerAccount: operatorEvmAddress, // default admin / owner of the bond diamond
       currency: "0x555344", // USD
       numberOfUnits: String(Math.round(faceValueUsd * 100)),
-      nominalValue: "1",
+      nominalValue: "1", 
+      nominalValueDecimals: 2,
       startingDate: String(now), // unix seconds
       maturityDate: maturity, // unix seconds
-      regulationType: 0,
+      regulationType: 1, // Reg S; required by ATS validation when a subtype is supplied.
       regulationSubType: 0,
       isCountryControlListWhiteList: true,
       countries: "",
@@ -102,9 +110,11 @@ async function tokenizeReceivable({ controllerAddress, invoiceFaceValueUsd, matu
       }),
       configId: `0x${"0".repeat(64)}`,
       configVersion: 1,
+      proceedRecipientsIds: [],
+      proceedRecipientsData: [],
     }),
   );
-
+  console.log(`Bond issued: ${token.security.evmDiamondAddress} | transaction: ${token.transactionId}`);
   const result = {
     kind: "receivable-bond",
     ensName,
@@ -119,7 +129,8 @@ async function tokenizeReceivable({ controllerAddress, invoiceFaceValueUsd, matu
   };
   console.log("Bond-issued receivable:", result.tokenAddress);
   if (result.transactionId) {
-    console.log("HashScan:", `https://hashscan.io/testnet/transaction/${String(result.transactionId).replace("@", "-")}`);
+    const url = await hashscanUrl(result.transactionId);
+    if (url) console.log("HashScan:", url);
   }
   return result;
 }

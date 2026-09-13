@@ -38,6 +38,12 @@ const WORLD_REGISTER_URL = import.meta.env.VITE_WORLD_REGISTER_URL || `${BACKEND
 const WORLD_GATE_URL = import.meta.env.VITE_WORLD_GATE_URL || `${BACKEND_URL}/api/world/gate`;
 const WORLD_SELFIE_SIGN_URL = import.meta.env.VITE_WORLD_SELFIE_SIGN_URL || `${BACKEND_URL}/api/world/selfie/sign`;
 const WORLD_SELFIE_VERIFY_URL = import.meta.env.VITE_WORLD_SELFIE_VERIFY_URL || `${BACKEND_URL}/api/world/selfie/verify`;
+// The Graph composition workspace (ETHOnline 2026 composable track): status +
+// standardized intel + natural-language access to The Graph's Subgraph MCP,
+// proxied through the Node backend so GRAPH_API_KEY stays server-side.
+const GRAPH_STACK_URL = import.meta.env.VITE_GRAPH_STACK_URL || `${BACKEND_URL}/api/graph/stack`;
+const GRAPH_INTEL_URL = import.meta.env.VITE_GRAPH_INTEL_URL || `${BACKEND_URL}/api/graph/intel`;
+const GRAPH_ASK_URL = import.meta.env.VITE_GRAPH_ASK_URL || `${BACKEND_URL}/api/graph/ask`;
 // World ID environment for this project — SANDBOX ONLY (never production).
 // The backend labels every credential environment:"sandbox" + mock:true; this
 // mirrors that so the UI badges sandbox registrations instead of implying a
@@ -152,6 +158,169 @@ function formatUsd(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Hedera payment outputs — structured result cards. One shared card shape for
+// every step (pay-for-report, quote, issue, transfer, schedule, redeem) so the
+// raw backend payload is presented as labeled metrics / rows + tx evidence.
+// ---------------------------------------------------------------------------
+function hashscanLink(txId) {
+  if (!txId) return null;
+  const match = String(txId).match(/(\d{1,10}\.\d{1,9})$/);
+  return match ? `https://hashscan.io/testnet/transaction/${match[1]}` : null;
+}
+
+// HashScan's /transaction deep link resolves by CONSENSUS timestamp, but tx ids
+// (0.0.x@<validStart>) carry the SIGNED/validStart time — usually a few seconds
+// earlier than consensus, so linking validStart 404s. Resolve the consensus
+// timestamp from the public testnet Mirror Node (CORS: *) and cache per tx id.
+const consensusCache = new Map();
+
+async function resolveConsensusTimestamp(txId) {
+  if (!txId) return null;
+  const key = String(txId);
+  if (consensusCache.has(key)) return consensusCache.get(key);
+  const dash = key.replace("@", "-").replace(/\.(\d+)$/, "-$1"); // 0.0.x-s-n
+  let consensus = null;
+  try {
+    const res = await fetch(
+      `https://testnet.mirrornode.hedera.com/api/v1/transactions/${encodeURIComponent(dash)}`,
+    );
+    if (res.ok) {
+      const data = await res.json();
+      consensus = data?.transactions?.[0]?.consensus_timestamp || null;
+    }
+  } catch {
+    consensus = null;
+  }
+  consensusCache.set(key, consensus);
+  return consensus;
+}
+
+function HashScanLink({ txId, children, className = "" }) {
+  const [consensus, setConsensus] = useState(null);
+  const [resolved, setResolved] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setResolved(false);
+    if (!txId) { setConsensus(null); setResolved(true); return undefined; }
+    resolveConsensusTimestamp(txId).then((c) => {
+      if (cancelled) return;
+      setConsensus(c);
+      setResolved(true);
+    });
+    return () => { cancelled = true; };
+  }, [txId]);
+  // Best effort while resolving / on mirror failure: link the tx-id timestamp
+  // (identical to the previous behaviour rather than showing nothing).
+  const href = consensus
+    ? `https://hashscan.io/testnet/transaction/${consensus}`
+    : hashscanLink(txId) || "#";
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className={className}>
+      {children || (resolved && !consensus ? "HashScan ↪" : "…")}
+    </a>
+  );
+}
+
+function CopyButton({ text, label = "value" }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className={`copy-button${copied ? " copied" : ""}`}
+      title={`Copy ${label} to clipboard`}
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(String(text ?? ""));
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1400);
+        } catch {
+          setCopied(false);
+        }
+      }}
+    >
+      {copied ? "✓ copied" : "⧉ copy"}
+    </button>
+  );
+}
+
+function TxEvidence({ txId, label = "settlement tx" }) {
+  if (!txId) return null;
+  return (
+    <div className="tx-evidence">
+      <span className="tx-evidence-label">{label}</span>
+      <code className="tx-evidence-id" title={txId}>{txId}</code>
+      <HashScanLink className="tx-evidence-link" txId={txId}>HashScan ↪</HashScanLink>
+      <CopyButton text={txId} label={label} />
+    </div>
+  );
+}
+
+function Metric({ label, value, sub, accent }) {
+  return (
+    <div className="factoring-metric">
+      <span className="metric-label">{label}</span>
+      <span className={`metric-value${accent ? " accent" : ""}`}>
+        {value}
+        {sub ? <em>{sub}</em> : null}
+      </span>
+    </div>
+  );
+}
+
+function DetailRow({ label, value, copy, href }) {
+  const val = value === null || value === undefined || value === "" ? "—" : value;
+  return (
+    <div className="tx-row">
+      <span className="tx-row-label">{label}</span>
+      <span className="tx-row-value">
+        {href ? (
+          <a href={href} target="_blank" rel="noreferrer">{val} ↪</a>
+        ) : copy ? (
+          <>
+            <code>{val}</code>
+            <CopyButton text={val} label={label} />
+          </>
+        ) : (
+          val
+        )}
+      </span>
+    </div>
+  );
+}
+
+function HederaOutcome({ badge, tone = "ok", title, agent, body, metrics = [], rows = [], tx, foot }) {
+  return (
+    <div className={`tx-card${tone === "warn" ? " warn" : ""}`}>
+      <div className="tx-card-head">
+        <span className={`factoring-badge ${tone === "warn" ? "warn" : "ok"}`}>{badge}</span>
+        <span className="tx-card-title">{title}</span>
+      </div>
+      {agent && (
+        <div className="tx-card-agent">
+          <span className="factoring-quote-ens">{agent.ens || agent.controller}</span>
+          {agent.controller && agent.ens && (
+            <span className="factoring-quote-controller">{agent.controller}</span>
+          )}
+        </div>
+      )}
+      {body}
+      {metrics.length > 0 && (
+        <div className="tx-card-metrics">
+          {metrics.map((m, i) => <Metric key={i} {...m} />)}
+        </div>
+      )}
+      {rows.length > 0 && (
+        <div className="tx-card-rows">
+          {rows.map((r, i) => <DetailRow key={i} {...r} />)}
+        </div>
+      )}
+      {tx && <TxEvidence txId={tx.txId} label={tx.label} />}
+      {foot}
+    </div>
+  );
 }
 
 // Deterministic evidence-backed recommendation, mirroring
@@ -280,6 +449,16 @@ export default function App() {
   const [leaderboard, setLeaderboard] = useState(null);
   const [mcpPayload, setMcpPayload] = useState(null);
   const [factoring, setFactoring] = useState(null);
+  // Graph composition workspace: standardized intel + official Subgraph MCP + stack health
+  const [graphStack, setGraphStack] = useState(null);
+  const [graphIntel, setGraphIntel] = useState(null);
+  const [graphAsk, setGraphAsk] = useState(null);
+  const [graphStackLoading, setGraphStackLoading] = useState(false);
+  const [graphIntelLoading, setGraphIntelLoading] = useState(false);
+  const [graphAskLoading, setGraphAskLoading] = useState(false);
+  const [graphAskPrompt, setGraphAskPrompt] = useState("discover the top subgraphs for the loaded agent");
+  const [graphIntelError, setGraphIntelError] = useState(null);
+  const [graphAskError, setGraphAskError] = useState(null);
   // Hedera workspace (frontend-driven demo): x402 paid services + ATS lifecycle
   const [hederaStatus, setHederaStatus] = useState(null); // { operatorConfigured, atsConfigured, payer, x402Server, facilitator }
   const [hederaBusy, setHederaBusy] = useState("");
@@ -758,12 +937,78 @@ export default function App() {
   }
 
   // -------------------------------------------------------------------------
+  // Graph composition (ETHOnline 2026 The Graph composable/standardized
+  // track): cross-protocol intel via Messari standardized subgraphs + the
+  // official hosted Subgraph MCP + the live stack status. Proxied through the
+  // Node backend so GRAPH_API_KEY never lives in the browser.
+  // -------------------------------------------------------------------------
+  async function getGraph(path, body) {
+    if (!BACKEND_URL) throw new Error("Set VITE_BACKEND_URL (the Node backend that proxies Graph requests).");
+    const response = await fetch(`${BACKEND_URL}${path}`, {
+      method: body ? "POST" : "GET",
+      headers: body ? { "content-type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `Graph ${path} failed: HTTP ${response.status}`);
+    return payload;
+  }
+
+  async function loadGraphStack(force = false) {
+    if (graphStack && !force) return;
+    setGraphStackLoading(true);
+    try {
+      setGraphStack(await getGraph("/api/graph/stack"));
+    } catch (err) {
+      setGraphStack({ error: messageFor(err) });
+    } finally {
+      setGraphStackLoading(false);
+    }
+  }
+
+  async function runGraphIntel() {
+    setGraphIntelError(null);
+    setGraphIntel(null);
+    if (!profile) return setGraphIntelError("Load an agent report first — market intel is contextualized to the loaded agent.");
+    setGraphIntelLoading(true);
+    try {
+      setGraphIntel(await getGraph("/api/graph/intel", { controller: profile.controller }));
+    } catch (err) {
+      setGraphIntelError(messageFor(err));
+    } finally {
+      setGraphIntelLoading(false);
+    }
+  }
+
+  async function runGraphAsk() {
+    setGraphAskError(null);
+    const prompt = graphAskPrompt.trim();
+    if (!prompt) return setGraphAskError("Enter a question for The Graph Network first.");
+    setGraphAskLoading(true);
+    try {
+      // Pass the loaded agent's controller so discovery presets can search by
+      // contract address without the user typing one.
+      setGraphAsk(await getGraph("/api/graph/ask", { prompt, controller: profile?.controller || null }));
+    } catch (err) {
+      setGraphAskError(messageFor(err));
+    } finally {
+      setGraphAskLoading(false);
+    }
+  }
+
+  // Refresh the stack panel each time the Graph workspace opens.
+  useEffect(() => {
+    if (activePage === "graph") loadGraphStack();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePage]);
+
+  // -------------------------------------------------------------------------
   // Hedera: x402 paid services + ATS receivable lifecycle — everything the
   // demo needs is driven from this page, proxied through the Node backend so
   // Hedera keys never live in the browser.
   // -------------------------------------------------------------------------
   function hashscanTxLink(txId) {
-    return txId ? `https://hashscan.io/testnet/transaction/${String(txId).replace("@", "-")}` : null;
+    return hashscanLink(txId);
   }
   async function postHedera(path, body) {
     if (!BACKEND_URL) throw new Error("Set VITE_BACKEND_URL (the Node backend that holds the Hedera keys).");
@@ -772,7 +1017,9 @@ export default function App() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
+    console.log(`POST ${path} returned HTTP ${response.status}`);
     const payload = await response.json().catch(() => ({}));
+    console.log(`POST ${path} payload:`, payload);
     if (!response.ok) throw new Error(payload.error || `Hedera ${path} failed: HTTP ${response.status}`);
     return payload;
   }
@@ -795,8 +1042,9 @@ export default function App() {
     setHederaBusy(service);
     try {
       const path = service === "rate" ? "/api/hedera/x402/rate" : "/api/hedera/x402/report";
+      console.log(`Calling ${path} for controller ${hederaController}…`);
       const r = await postHedera(path, { controller: hederaController });
-      setX402Payment(r);
+      setX402Payment({ ...r, _service: service });
       pushEvidence(`x402:${service}`, r);
     } catch (err) {
       setError(messageFor(err));
@@ -1933,19 +2181,42 @@ export default function App() {
               The agent's own wallet (server-side) signs an HBAR transfer; Blocky402 verifies + settles; the x402
               service delivers the same Graph-backed report <code>get_agent_report</code> returns. No API key, no seats.
             </p>
-            {x402Payment && (
-              <div className="factoring-result">
-                <div>paid report: <strong>{x402Payment.ensName}</strong> score <strong>{x402Payment.score}</strong> [{x402Payment.tier}]</div>
-                <div>decision: <strong>{x402Payment.recommendation?.decision}</strong> · payer wallet {x402Payment.payerWallet}</div>
-                {x402Payment.payment?.transactionId && (
-                  <div className="script-hint">
-                    payment tx: {x402Payment.payment.transactionId} ·{" "}
-                    <a href={hashscanTxLink(x402Payment.payment.transactionId)} target="_blank" rel="noreferrer">
-                      HashScan ↪
-                    </a>
-                  </div>
-                )}
-              </div>
+            {x402Payment?._service === "report" && (
+              <HederaOutcome
+                badge="PAID · 100 tinybar HBAR"
+                title="Credit report delivered — get_agent_report"
+                agent={{ ens: x402Payment.ensName, controller: x402Payment.controller }}
+                metrics={[
+                  {
+                    label: "Credit score",
+                    value: x402Payment.score,
+                    sub: ` / 1000 · ${x402Payment.tier}`,
+                  },
+                  {
+                    label: "Decision",
+                    value: String(x402Payment.recommendation?.decision || "—").toUpperCase(),
+                    accent: x402Payment.recommendation?.decision === "approve",
+                  },
+                  {
+                    label: "Clean rate",
+                    value: `${(Number(x402Payment.recommendation?.cleanRate ?? 0) * 100).toFixed(0)}%`,
+                  },
+                ]}
+                rows={[
+                  {
+                    label: "recommended limit",
+                    value:
+                      x402Payment.recommendation?.recommendedLimitWei
+                        ? `${ethers.formatEther(x402Payment.recommendation.recommendedLimitWei)} ETH`
+                        : "—",
+                  },
+                  { label: "payer wallet", value: x402Payment.payerWallet, copy: true },
+                ]}
+                tx={{ label: "payment tx", txId: x402Payment.payment?.transactionId }}
+                foot={
+                  x402Payment.payment?.note && <p className="tx-card-note">{x402Payment.payment.note}</p>
+                }
+              />
             )}
           </div>
 
@@ -1960,19 +2231,78 @@ export default function App() {
               </button>
             </div>
             {hederaQuote && (
-              <div className="factoring-result">
-                <div>
-                  {hederaQuote.agent} · score {hederaQuote.score} ·{" "}
-                  {hederaQuote.eligible ? (
-                    <>
-                      <strong>{hederaQuote.discountPercent}%</strong> discount → ${hederaQuote.pricedSaleUsd} sale price
-                    </>
-                  ) : (
-                    <strong>not eligible</strong>
-                  )}
-                </div>
-                <div className="script-hint">oracle: {hederaQuote.oracle}</div>
-              </div>
+              <HederaOutcome
+                badge={hederaQuote.eligible ? "✓ ELIGIBLE" : "✗ NOT ELIGIBLE"}
+                tone={hederaQuote.eligible ? "ok" : "warn"}
+                title="Credit-oracle price — receivable factoring quote"
+                agent={{ ens: hederaQuote.agent, controller: hederaQuote.controller }}
+                body={
+                  hederaQuote.eligible && (
+                    <div className="factoring-pricing tx-card-pricing">
+                      <div className="pricing-leg">
+                        <span className="pricing-label">Face value</span>
+                        <strong className="pricing-amount">${formatUsd(hederaQuote.faceValueUsd)}</strong>
+                      </div>
+                      <span className="pricing-arrow">→ at − {hederaQuote.discountPercent}%</span>
+                      <div className="pricing-leg sale">
+                        <span className="pricing-label">Sale price (LP buy)</span>
+                        <strong className="pricing-amount">${formatUsd(hederaQuote.pricedSaleUsd)}</strong>
+                      </div>
+                      <span className="pricing-margin">
+                         <span className="pricing-label">LP margin</span>
+                         <strong className="pricing-amount">${formatUsd(hederaQuote.faceValueUsd - hederaQuote.pricedSaleUsd)}</strong>
+                      </span>
+                    </div>
+                  )
+                }
+                metrics={[
+                  {
+                    label: "Credit score",
+                    value: hederaQuote.score,
+                    sub: ` / 1000 · ${hederaQuote.tier}`,
+                  },
+                  {
+                    label: "Discount rate",
+                    value: hederaQuote.eligible ? `${hederaQuote.discountRate}` : "—",
+                    accent: hederaQuote.eligible,
+                  },
+                ]}
+                rows={
+                  hederaQuote.eligible
+                    ? [
+                        { label: "face value", value: `$${formatUsd(hederaQuote.faceValueUsd)}` },
+                        { label: "sale price", value: `$${formatUsd(hederaQuote.pricedSaleUsd)}` },
+                      ]
+                    : [{ label: "note", value: `Score ${hederaQuote.score} — below the 500 threshold or frozen; not eligible.` }]
+                }
+                // foot={<p className="tx-card-note">oracle: {hederaQuote.oracle}</p>}
+              />
+            )}
+            {x402Payment?._service === "rate" && (
+              <HederaOutcome
+                badge="PAID · 50 tinybar HBAR"
+                title="Factoring-rate quote — paid via x402"
+                agent={{ ens: x402Payment.ensName, controller: x402Payment.controller }}
+                metrics={[
+                  { label: "Credit score", value: x402Payment.score, sub: " / 1000" },
+                  {
+                    label: "Eligible",
+                    value: x402Payment.eligible ? "YES" : "NO",
+                    accent: Boolean(x402Payment.eligible),
+                  },
+                  {
+                    label: "Discount",
+                    value: x402Payment.eligible ? `−${x402Payment.discountPercent}%` : "—",
+                  },
+                ]}
+                rows={[{ label: "payer wallet", value: x402Payment.payerWallet, copy: true }]}
+                tx={{ label: "payment tx", txId: x402Payment.payment?.transactionId }}
+                foot={
+                  (x402Payment.note || x402Payment.oracle) && (
+                    <p className="tx-card-note">{x402Payment.note || x402Payment.oracle}</p>
+                  )
+                }
+              />
             )}
           </div>
 
@@ -1990,7 +2320,7 @@ export default function App() {
                 inputMode="decimal"
                 aria-label="Face value USD"
               />
-              <span className="suffix">USD face</span>
+              <span className="suffix">USD face </span>
               <input
                 value={hederaForm.maturityDays}
                 onChange={(e) => setHederaForm({ ...hederaForm, maturityDays: e.target.value })}
@@ -2000,17 +2330,37 @@ export default function App() {
               <span className="suffix">days</span>
             </div>
             {hederaIssue && (
-              <div className="factoring-result">
-                <div>
-                  issued <strong>{hederaIssue.kind}</strong> for {hederaIssue.ensName} at {hederaIssue.discountRate * 100}% —{" "}
-                  ${hederaIssue.faceValueUsd} face → ${hederaIssue.discountedPriceUsd} sale price
-                </div>
-                <div className="script-hint">token: {hederaIssue.tokenAddress}</div>
-                <div className="script-hint">
-                  issuance tx: {hederaIssue.transactionId} · <a href={hashscanTxLink(hederaIssue.transactionId)} target="_blank" rel="noreferrer">HashScan ↪</a>
-                </div>
-                <div className="script-hint">maturity: {new Date(Date.now() + Number(hederaForm.maturityDays) * 86400000).toDateString()}</div>
-              </div>
+              <HederaOutcome
+                badge="BOND ISSUED"
+                title="Receivable tokenized as an ATS zero-coupon bond"
+                agent={{ ens: hederaIssue.ensName, controller: hederaIssue.controller }}
+                body={
+                  <div className="factoring-pricing tx-card-pricing">
+                    <div className="pricing-leg">
+                      <span className="pricing-label">Face value</span>
+                      <strong className="pricing-amount">${formatUsd(hederaIssue.faceValueUsd)}</strong>
+                    </div>
+                    <span className="pricing-arrow">→ at −{(hederaIssue.discountRate * 100).toFixed(0)}%</span>
+                    <div className="pricing-leg sale">
+                      <span className="pricing-label">Sale price</span>
+                      <strong className="pricing-amount">${formatUsd(hederaIssue.discountedPriceUsd)}</strong>
+                    </div>
+                    <span className="pricing-margin">
+                      LP margin ${formatUsd(hederaIssue.faceValueUsd - hederaIssue.discountedPriceUsd)}
+                    </span>
+                  </div>
+                }
+                metrics={[
+                  { label: "Credit score", value: hederaIssue.score, sub: " / 1000" },
+                  { label: "Maturity", value: `${hederaIssue.maturityDays} days` },
+                  {
+                    label: "Matures",
+                    value: new Date(Date.now() + Number(hederaIssue.maturityDays) * 86400000).toLocaleDateString(),
+                  },
+                ]}
+                rows={[{ label: "token (ATS bond)", value: hederaIssue.tokenAddress, copy: true }]}
+                tx={{ label: "issuance tx", txId: hederaIssue.transactionId }}
+              />
             )}
           </div>
 
@@ -2043,10 +2393,28 @@ export default function App() {
               />
             </div>
             {hederaTransfer && (
-              <div className="script-hint">
-                transferred {hederaForm.units} units · tx {hederaTransfer.transactionId} ·{" "}
-                <a href={hashscanTxLink(hederaTransfer.transactionId)} target="_blank" rel="noreferrer">HashScan ↪</a>
-              </div>
+              <HederaOutcome
+                badge="TRANSFERRED"
+                title="Receivable units sold to liquidity provider"
+                metrics={[
+                  { label: "Units sold", value: hederaForm.units || "—" },
+                  {
+                    label: "Face value",
+                    value: `$${formatUsd((Number(hederaForm.units) || 0) / 100)}`,
+                  },
+                ]}
+                rows={[
+                  { label: "token", value: hederaForm.tokenAddress, copy: true },
+                  { label: "LP account", value: hederaForm.lpAccount, copy: true },
+                ]}
+                tx={{ label: "transfer tx", txId: hederaTransfer.transactionId }}
+                foot={
+                  <p className="tx-card-note">
+                    Compliance-enforced: the transfer lands only if the buyer passes the bond's whitelist + KYC
+                    checks — an un-whitelisted buyer is rejected by ATS compliance modules.
+                  </p>
+                }
+              />
             )}
           </div>
 
@@ -2077,16 +2445,52 @@ export default function App() {
               />
             </div>
             {hederaSchedule && (
-              <div className="script-hint">
-                scheduled {hederaSchedule.mode}: <strong>{hederaSchedule.scheduleId}</strong> ·{" "}
-                {hederaSchedule.scheduleTxId && <a href={hashscanTxLink(hederaSchedule.scheduleTxId)} target="_blank" rel="noreferrer">HashScan ↪</a>}
-              </div>
+              <HederaOutcome
+                badge="SCHEDULED"
+                title={
+                  hederaSchedule.mode === "contract"
+                    ? "Bond redemption scheduled — executes at maturity"
+                    : "Cash settlement scheduled — executes at maturity"
+                }
+                metrics={[
+                  { label: "Mode", value: hederaSchedule.mode },
+                  {
+                    label: "Execute at",
+                    value: hederaSchedule.executeAtUnixSeconds
+                      ? new Date(Number(hederaSchedule.executeAtUnixSeconds) * 1000).toLocaleString()
+                      : "unlocked (sign after maturity)",
+                  },
+                ]}
+                rows={[
+                  { label: "schedule id", value: hederaSchedule.scheduleId, copy: true },
+                  { label: "inner tx", value: hederaSchedule.scheduledTransaction },
+                ]}
+                tx={{ label: "schedule-create tx", txId: hederaSchedule.scheduleTxId }}
+                foot={hederaSchedule.note && <p className="tx-card-note">{hederaSchedule.note}</p>}
+              />
             )}
             {hederaRedeem && (
-              <div className="script-hint">
-                redeemed {hederaForm.units} units · tx {hederaRedeem.transactionId} ·{" "}
-                <a href={hashscanTxLink(hederaRedeem.transactionId)} target="_blank" rel="noreferrer">HashScan ↪</a>
-              </div>
+              <HederaOutcome
+                badge="REDEEMED"
+                title="Bond redeemed at maturity"
+                metrics={[
+                  { label: "Units redeemed", value: hederaForm.units || "—" },
+                  {
+                    label: "Face value",
+                    value: `$${formatUsd((Number(hederaForm.units) || 0) / 100)}`,
+                  },
+                ]}
+                rows={[
+                  { label: "token", value: hederaForm.tokenAddress, copy: true },
+                  { label: "holder (LP)", value: hederaForm.lpAccount, copy: true },
+                ]}
+                tx={{ label: "redemption tx", txId: hederaRedeem.transactionId }}
+                foot={
+                  <p className="tx-card-note">
+                    Proceeds flow to the bond's proceed-recipient configuration at maturity.
+                  </p>
+                }
+              />
             )}
             <p className="mcp-tool-desc">
               Hedera's native Scheduled Transactions mean the maturity payout is written ahead of time — nobody has
@@ -2115,9 +2519,10 @@ export default function App() {
                       <td>{e.kind}</td>
                       <td>
                         {e.txId ? (
-                          <a href={hashscanTxLink(e.txId)} target="_blank" rel="noreferrer">
-                            {e.txId} ↪
-                          </a>
+                          <span className="tx-evidence-inline">
+                            <HashScanLink txId={e.txId}>{e.txId} ↪</HashScanLink>
+                            <CopyButton text={e.txId} label="transaction" />
+                          </span>
                         ) : (
                           "—"
                         )}
@@ -2138,8 +2543,7 @@ export default function App() {
         <p className="mcp-lede">
           <code>integrations/mcp/server.js</code> exposes the subgraph to Claude Desktop, Cursor, Claude Code
           and any agent SDK over the Model Context Protocol. The three tools below run the exact same queries —
-          what you see is what an AI agent receives. From a script:{" "}
-          <code>node integrations/mcp/cli.js get_agent_report 0x…</code>
+          what you see is what an AI agent receives.
         </p>
 
         <div className="mcp-tool">
@@ -2295,6 +2699,192 @@ export default function App() {
             </div>
           )}
         </div>
+
+        <div className="mcp-tool">
+          <div className="mcp-tool-head">
+            <code className="mcp-tool-name">Ask The Graph Network · official Subgraph MCP</code>
+            <button className="action-button secondary" onClick={runGraphAsk} disabled={graphAskLoading}>
+              {graphAskLoading ? "Asking…" : "Ask"}
+            </button>
+          </div>
+          <p className="mcp-tool-desc">
+            Routes your question to <strong>The Graph's hosted Subgraph MCP</strong>{" "}
+            (<code>subgraphs.mcp.thegraph.com/sse</code>) — schema lookup, query-by-subgraph-id and
+            top-deployment discovery across The Graph Network. Needs a free Gateway API key
+            (<code>GRAPH_API_KEY</code> in backend .env). Try a preset:
+          </p>
+          <div className="ask-chips">
+            {[
+              "discover the top subgraphs for the loaded agent",
+              "show the schema for the project's deployed credit subgraph",
+              "query the latest standardized protocol intel on The Graph Network",
+            ].map((s) => (
+              <button key={s} className="ask-chip" onClick={() => setGraphAskPrompt(s)}>
+                {s}
+              </button>
+            ))}
+          </div>
+          <textarea
+            className="ask-input"
+            rows={2}
+            value={graphAskPrompt}
+            onChange={(e) => setGraphAskPrompt(e.target.value)}
+            placeholder="e.g. discover the top subgraphs for contract 0x…"
+            aria-label="Question for The Graph Network"
+          />
+          {graphAskError && <p className="error-inline">{graphAskError}</p>}
+          {graphAsk && (
+            <div className="graph-ask-result">
+              {graphAsk.ok === false && (
+                <div className="factoring-denied">
+                  <span className="factoring-denied-icon">✗</span>
+                  <div>
+                    <strong>
+                      {graphAsk.error || graphAsk.hint
+                        ? "The Graph Subgraph MCP call failed"
+                        : "The Graph Subgraph MCP is not configured"}
+                    </strong>
+                    <p>
+                      {graphAsk.error ||
+                        graphAsk.transcript?.find((s) => s.detail)?.detail ||
+                        graphAsk.reason ||
+                        "Set GRAPH_API_KEY (free, thegraph.com/studio) in the backend .env and restart."}
+                    </p>
+                    {graphAsk.hint && <p className="stack-detail">{graphAsk.hint}</p>}
+                  </div>
+                </div>
+              )}
+              {graphAsk.answer && <pre className="mcp-json">{graphAsk.answer}</pre>}
+              {graphAsk.transcript?.length > 0 && (
+                <details className="stack-details">
+                  <summary>transcript — what the official Subgraph MCP executed</summary>
+                  <ul className="stack-transcript">
+                    {graphAsk.transcript.map((step, i) => (
+                      <li key={i}>
+                        <code>{step.step}</code>
+                        <span>{step.detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="mcp-tool">
+          <div className="mcp-tool-head">
+            <code className="mcp-tool-name">get_market_intel(controller) · Messari standardized subgraphs</code>
+            <button className="action-button secondary" onClick={runGraphIntel} disabled={graphIntelLoading}>
+              {graphIntelLoading ? "Querying protocols…" : "Pull market intel"}
+            </button>
+          </div>
+          <p className="mcp-tool-desc">
+            ONE shared query shape (the standardized backbone: <code>protocols</code> +{" "}
+            <code>usageMetricsDailySnapshots</code> + <code>financialsDailySnapshots</code>) run across multiple
+            Messari protocol subgraphs — DEX, lending, derivatives. TVL, revenue and usage become directly
+            comparable; the same GraphQL query spans every protocol.
+          </p>
+          {graphIntelError && <p className="error-inline">{graphIntelError}</p>}
+          {graphIntel && (
+            <div className="intel-panel">
+              {graphIntel.providers.length > 0 ? (
+                <div className="intel-grid">
+                  {graphIntel.providers.map((provider) => (
+                    <div key={provider.provider} className={`intel-card ${provider.healthy ? "live" : "down"}`}>
+                      <div className="intel-card-head">
+                        <span className="intel-card-name">{provider.name || provider.provider}</span>
+                        <span className={`intel-badge ${provider.healthy ? "ok" : "warn"}`}>
+                          {provider.healthy
+                            ? `${provider.network} · ${provider.schemaVersion || "std schema"}`
+                            : "no data"}
+                        </span>
+                      </div>
+                      {provider.healthy ? (
+                        <dl className="intel-metrics">
+                          <div>
+                            <dt>TVL (USD)</dt>
+                            <dd>{provider.totalValueLockedUSD != null ? formatUsd(provider.totalValueLockedUSD) : "—"}</dd>
+                          </div>
+                          <div>
+                            <dt>Revenue 7d (USD)</dt>
+                            <dd>{formatUsd(provider.revenue7dUSD)}</dd>
+                          </div>
+                          <div>
+                            <dt>Active users 7d</dt>
+                            <dd>
+                              {provider.dailyActiveUsers7d != null
+                                ? Number(provider.dailyActiveUsers7d).toLocaleString()
+                                : "—"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Tx 7d</dt>
+                            <dd>{Number(provider.transactions7d || 0).toLocaleString()}</dd>
+                          </div>
+                        </dl>
+                      ) : (
+                        <div className="intel-error">{provider.error}</div>
+                      )}
+                      <span className="intel-meta">
+                        {provider.category} · resolved via {provider.resolvedVia || "—"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="factoring-denied">
+                  <span className="factoring-denied-icon">◆</span>
+                  <div>
+                    <strong>No live providers resolved</strong>
+                    <p>{graphIntel.crossProtocol?.note}</p>
+                  </div>
+                </div>
+              )}
+              <div className="intel-summary">
+                <strong>{graphIntel.crossProtocol?.note}</strong>
+                {graphIntel.crossProtocol?.liveProviders > 0 && (
+                  <span>
+                    Σ TVL ${formatUsd(graphIntel.crossProtocol.totalValueLockedUSD)} · Σ revenue 7d $
+                    {formatUsd(graphIntel.crossProtocol.revenue7dUSD)} ·{" "}
+                    {graphIntel.crossProtocol.transactions7d.toLocaleString()} tx across{" "}
+                    {graphIntel.crossProtocol.categories.join(" + ")}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="mcp-tool stack-panel">
+          <div className="mcp-tool-head">
+            <code className="mcp-tool-name">The Graph stack — composition, one screen</code>
+            <button className="action-button secondary" onClick={() => loadGraphStack(true)} disabled={graphStackLoading}>
+              {graphStackLoading ? "Probing…" : "Refresh status"}
+            </button>
+          </div>
+          <p className="mcp-tool-desc">
+            Every leg of the composition with live status. Standardized legs consume live data from Graph
+            providers (Subgraph Studio / The Graph Network gateway) — a qualifying requirement for the
+            composable track.
+          </p>
+          {graphStack?.error && <p className="error-inline">{graphStack.error}</p>}
+          {graphStack?.legs && (
+            <div className="stack-rows">
+              {graphStack.legs.map((leg) => (
+                <div key={leg.id} className={`stack-row ${leg.status}`}>
+                  <div className="stack-row-head">
+                    <span className={`stack-pill ${leg.status}`}>{leg.status}</span>
+                    <strong>{leg.label}</strong>
+                    <span className="stack-product">{leg.product}</span>
+                  </div>
+                  <p className="stack-desc">{leg.description}</p>
+                  <span className="stack-detail">{leg.detail}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </section>}
 
       {activePage === "chat" && <MCPChat messages={chatMessages} loading={chatLoading} onAsk={askMcpChat} />}
@@ -2335,8 +2925,10 @@ export default function App() {
           <span className="panel-index">04 · AI ACCESS</span>
           <h3>MCP server for AI agents</h3>
           <p>
-            get_agent_report / get_factoring_rate / list_agents over stdio — any MCP client pulls the same
-            evidence-backed recommendation. Run them in the panel above.
+            get_agent_report / get_factoring_rate / list_agents / get_market_intel / ask_graph_network over
+            stdio — plus the composable-track panels: cross-protocol intel across Messari standardized
+            subgraphs and natural-language access to The Graph's hosted Subgraph MCP. Run them in the panel
+            above.
           </p>
           <span className="cap-status script">script: node integrations/mcp/cli.js …</span>
         </div>

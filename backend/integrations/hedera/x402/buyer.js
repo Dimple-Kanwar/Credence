@@ -42,7 +42,7 @@ async function runPaidRequest(service, controller) {
   console.log("[4] delivered:");
   console.log(JSON.stringify(paid, null, 2));
   const tx = paid?.payment?.transactionId;
-  const link = hashscanTx(tx);
+  const link = tx ? await hashscanTx(tx) : null;
   if (link) {
     console.log(`\nHashScan — confirm the CRYPTOTRANSFER SUCCESS yourself:`);
     console.log(`  ${link}`);

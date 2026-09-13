@@ -1,5 +1,11 @@
 const { isAddress, ZeroAddress, JsonRpcProvider, Contract } = require("ethers");
 const { analyzeAgent } = require("../graph/credit-analyst.js");
+const {
+  STANDARD_PROTOCOL_QUERY,
+  STANDARD_PROVIDERS,
+  fetchStandardizedIntel,
+} = require("../graph/standardized-intel.js");
+const { askSubgraphMcp, listMcpTools } = require("./subgraph-mcp-client.js");
 
 const LIST_AGENTS_QUERY = `
   query ListAgents($first: Int!) {
@@ -58,7 +64,9 @@ function summarizeReport({ agent, recommendation, narrative }, controller) {
 }
 
 async function resolveController(input) {
+  console.log(`Resolving controller for input:`, input);
   const value = String(input || "").trim();
+  console.log(`Resolved controller input:`, value);
   if (isAddress(value)) return value;
   if (!process.env.SEPOLIA_RPC_URL || !process.env.CREDIT_BUREAU_ADDRESS) {
     throw new Error("ENS resolution requires SEPOLIA_RPC_URL and CREDIT_BUREAU_ADDRESS.");
@@ -133,21 +141,41 @@ async function answerChat(message) {
   if (/factor|invoice|receivable|discount/i.test(text) && subject) {
     return { tool: "get_factoring_rate", result: await getFactoringRate(subject) };
   }
+  if (/cross.protocol|market intel|standard|tv/i.test(text) && subject) {
+    return { tool: "get_market_intel", result: await getMarketIntel(subject) };
+  }
   if (subject) return { tool: "get_agent_report", result: await getAgentReport(subject) };
   return {
     tool: null,
-    result: "I can query get_agent_report, get_factoring_rate, or list_agents. Include a controller address or ENS name for an agent-specific request.",
+    result: "I can query get_agent_report, get_factoring_rate, get_market_intel, or list_agents. Include a controller address or ENS name for an agent-specific request.",
   };
+}
+
+async function getMarketIntel(controllerInput) {
+  const controller = String(controllerInput || "").trim();
+  if (!controller) return fetchStandardizedIntel(null); // market-wide, no controller context needed
+  return fetchStandardizedIntel(await resolveController(controller));
+}
+
+async function askGraphNetwork(message, controller) {
+  return askSubgraphMcp(message, {
+    controller: controller || null,
+    providers: STANDARD_PROVIDERS,
+    query: STANDARD_PROTOCOL_QUERY,
+  });
 }
 
 module.exports = {
   LIST_AGENTS_QUERY,
   answerChat,
+  askGraphNetwork,
   discountRateForScore,
   getAgentReport,
   getFactoringRate,
+  getMarketIntel,
   graphFetch,
   listAgents,
+  listMcpTools,
   resolveController,
   scoreTier,
   summarizeReport,

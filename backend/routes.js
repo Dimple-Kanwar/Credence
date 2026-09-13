@@ -52,6 +52,10 @@ async function handleRoutes(request, response) {
         sendJson(response, 200, await hedera.status(), config.ORIGIN);
         return true;
       }
+      if (path === "/api/graph/stack") {
+        sendJson(response, 200, await mcp.graphStackStatus(), config.ORIGIN);
+        return true;
+      }
       sendJson(response, 404, { error: "Route not found." }, config.ORIGIN);
       return true;
     }
@@ -80,6 +84,18 @@ async function handleRoutes(request, response) {
     }
     if (path === "/api/chat") {
       sendJson(response, 200, await mcp.answerChat(payload.message), config.ORIGIN);
+      return true;
+    }
+    if (path === "/api/graph/intel") {
+      sendJson(response, 200, await mcp.getMarketIntel(payload.controller || ""), config.ORIGIN);
+      return true;
+    }
+    if (path === "/api/graph/ask") {
+      sendJson(response, 200, await mcp.askGraphNetwork(payload), config.ORIGIN);
+      return true;
+    }
+    if (path === "/api/graph/stack") {
+      sendJson(response, 200, await mcp.graphStackStatus(), config.ORIGIN);
       return true;
     }
     if (path === "/api/world/status") {

@@ -92,7 +92,14 @@ async function main() {
     const names = tools.map((t) => t.name).sort();
     assert(
       JSON.stringify(names) ===
-        JSON.stringify(["get_agent_report", "get_factoring_rate", "list_agents", "pay_for_credit_report"]),
+        JSON.stringify([
+          "ask_graph_network",
+          "get_agent_report",
+          "get_factoring_rate",
+          "get_market_intel",
+          "list_agents",
+          "pay_for_credit_report",
+        ]),
       `unexpected tools: ${names}`
     );
 
@@ -142,7 +149,32 @@ async function main() {
       "pay_for_credit_report should explain how to configure the x402 service"
     );
 
-    console.log("SMOKE OK — 4 tools + resource verified against the live server protocol.");
+    // get_market_intel without GRAPH_API_KEY -> structured "no provider" payload, not a crash.
+    const intel = await client.callTool({
+      name: "get_market_intel",
+      arguments: { controller: "0xf00d00000000000000000000000000000000000f" },
+    });
+    const intelJson = JSON.parse(intel.content[0].text);
+    assert(Array.isArray(intelJson.providers), "get_market_intel should return a providers array");
+    assert(intelJson.queryShape, "get_market_intel should expose the shared query shape");
+    assert(
+      intelJson.crossProtocol.note.includes("GRAPH_API_KEY"),
+      "get_market_intel should explain how to enable the standardized leg"
+    );
+
+    // ask_graph_network without GRAPH_API_KEY -> instructional payload, not a crash.
+    const ask = await client.callTool({
+      name: "ask_graph_network",
+      arguments: { prompt: "discover top subgraphs for 0xf00d00000000000000000000000000000000000f" },
+    });
+    const askJson = JSON.parse(ask.content[0].text);
+    assert(askJson.ok === false, "ask_graph_network should report not configured");
+    assert(
+      JSON.stringify(askJson).includes("GRAPH_API_KEY") && JSON.stringify(askJson).includes("Subgraph MCP"),
+      "ask_graph_network should name the Subgraph MCP + GRAPH_API_KEY"
+    );
+
+    console.log("SMOKE OK — 6 tools + resource verified against the live server protocol.");
   } finally {
     await client.close();
     mockServer.close();

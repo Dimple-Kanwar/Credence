@@ -22,6 +22,7 @@
  */
 const { Security, TransferRequest } = require("@hashgraph/asset-tokenization-sdk");
 const { connectAts } = require("./lib/ats.js");
+const { hashscanUrl } = require("./lib/hashscan.js");
 
 async function transferReceivable({ tokenAddressOrId, buyer, units, fromAccount }) {
   await connectAts();
@@ -37,7 +38,8 @@ async function transferReceivable({ tokenAddressOrId, buyer, units, fromAccount 
   console.log(`Transferred ${units} units of ${tokenAddressOrId} -> ${buyer}`);
   console.log("Transaction:", result.transactionId);
   if (result.transactionId) {
-    console.log("HashScan:", `https://hashscan.io/testnet/transaction/${String(result.transactionId).replace("@", "-")}`);
+    const url = await hashscanUrl(result.transactionId);
+    if (url) console.log("HashScan:", url);
   }
   console.log("Note: the transfer only lands if the buyer passes the token's compliance checks (whitelist + KYC grant).");
   console.log("An un-whitelisted buyer is rejected by ATS compliance modules — that is the control in action.");

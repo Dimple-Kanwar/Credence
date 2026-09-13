@@ -7,4 +7,7 @@ module.exports = {
   HOST,
   ORIGIN,
   GRAPH_ENDPOINT: process.env.GRAPH_ENDPOINT || process.env.VITE_SUBGRAPH_URL,
+  GRAPH_API_KEY: process.env.GRAPH_API_KEY || "",
+  GRAPH_STANDARD_ENDPOINTS: process.env.GRAPH_STANDARD_ENDPOINTS || "",
+  SUBGRAPH_MCP_URL: process.env.SUBGRAPH_MCP_URL || "https://subgraphs.mcp.thegraph.com/sse",
 };

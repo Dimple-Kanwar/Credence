@@ -87,6 +87,7 @@ async function queryGraph(endpoint, id) {
   });
   if (!response.ok) throw new Error(`Graph request failed: ${response.status}`);
   const payload = await response.json();
+  console.log(`Graph query returned:`, payload);
   if (payload.errors?.length) throw new Error(payload.errors[0].message);
   if (!payload.data?.agent) {
     throw new Error(

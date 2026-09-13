@@ -12,6 +12,7 @@
  */
 const { Bond, RedeemAtMaturityByPartitionRequest } = require("@hashgraph/asset-tokenization-sdk");
 const { connectAts } = require("./lib/ats.js");
+const { hashscanUrl } = require("./lib/hashscan.js");
 
 // ERC-3643/1400 security tokens use a single default partition.
 const DEFAULT_PARTITION = `0x${"0".repeat(64)}`;
@@ -31,7 +32,8 @@ async function redeemAtMaturity({ tokenAddressOrId, holder, units }) {
   console.log(`Redeemed ${units} units of ${tokenAddressOrId} held by ${holder} at maturity.`);
   console.log("Transaction:", result.transactionId);
   if (result.transactionId) {
-    console.log("HashScan:", `https://hashscan.io/testnet/transaction/${String(result.transactionId).replace("@", "-")}`);
+    const url = await hashscanUrl(result.transactionId);
+    if (url) console.log("HashScan:", url);
   }
   return result;
 }

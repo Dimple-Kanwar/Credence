@@ -47,14 +47,19 @@ const BASE = SERVER_URL.replace(/\/$/, "");
  */
 export async function probeService(path, controller) {
   const url = `${BASE}/${path}/${encodeURIComponent(controller)}`;
+  console.log(`Probing ${url} for payment requirements…`);
   const res = await fetch(url);
+  console.log(`  -> probe returned HTTP ${res.status}`);
   const body = await res.json().catch(() => ({}));
+  console.log(`  -> probe body:`, body);
   if (res.status === 402) {
     const requirements = body.accepts?.[0];
+    console.log(`  -> service requires payment:`, requirements);
     if (!requirements) throw new Error("402 response missing accepts[0]");
     return { url, requirements };
   }
   if (res.status === 200) {
+    console.log(`  -> service answered without payment (unexpected for ${path})`);
     throw new Error(`Service answered without payment (unexpected for ${path})`);
   }
   throw new Error(`Service probe failed: HTTP ${res.status} ${JSON.stringify(body)}`);
@@ -102,8 +107,27 @@ export async function payFor(path, controller) {
   return body;
 }
 
-/** HashScan link for a Hedera tx id. */
-export function hashscanTx(txId) {
+/**
+ * HashScan link for a Hedera tx id. HashScan's /transaction deep link resolves
+ * by CONSENSUS timestamp, but a tx id carries the validStart time (a few
+ * seconds earlier), so the consensus timestamp is looked up on the testnet
+ * Mirror Node first. Falls back to the raw timestamp on mirror failure.
+ */
+export async function hashscanTx(txId) {
   if (!txId) return null;
-  return `https://hashscan.io/testnet/transaction/${String(txId).replace("@", "-")}`;
+  const dash = String(txId).replace("@", "-").replace(/\.(\d+)$/, "-$1");
+  try {
+    const res = await fetch(
+      `https://testnet.mirrornode.hedera.com/api/v1/transactions/${encodeURIComponent(dash)}`,
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const consensus = data?.transactions?.[0]?.consensus_timestamp;
+      if (consensus) return `https://hashscan.io/testnet/transaction/${consensus}`;
+    }
+  } catch {
+    /* fall through */
+  }
+  const ts = String(txId).match(/(\d{1,10}\.\d{1,9})$/)?.[1];
+  return ts ? `https://hashscan.io/testnet/transaction/${ts}` : null;
 }
